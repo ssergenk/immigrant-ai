@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createSupabaseClient } from '@/lib/supabase'
 import { User } from '@supabase/supabase-js'
 import UpgradeModal from '@/components/ui/UpgradeModal'
-import FileUpload from '@/components/chat/FileUpload' // Make sure this path is correct
+import FileUpload from '@/components/chat/FileUpload'
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher'
 import { LanguageProvider, useLanguage } from '@/contexts/LanguageContext'
 import { Crown, MessageCircle, Upload, RotateCcw } from 'lucide-react'
@@ -32,7 +32,7 @@ function ChatContent() {
   const [chatSessionId, setChatSessionId] = useState<string>('')
   const [userData, setUserData] = useState<UserData | null>(null)
   const [error, setError] = useState<string>('')
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false) // This state controls the modal
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [isClearingChat, setIsClearingChat] = useState(false)
@@ -235,61 +235,116 @@ function ChatContent() {
   }
 
   const handleFileUpload = async (file: File) => {
-    if (!user || !chatSessionId) return
+    if (!user || !chatSessionId) {
+      console.error('User or chatSessionId not available for file upload.');
+      return;
+    }
 
-    // Show "Analyzing..." message immediately
-    const uploadMessage: Message = {
-      id: `upload-${Date.now()}`,
+    // Add user's "message" indicating a document was uploaded
+    const userUploadConfirmation: Message = {
+      id: `user-upload-${Date.now()}`,
+      content: `I've just uploaded a document: "${file.name}"`,
+      role: 'user'
+    };
+    setMessages(prev => [...prev, userUploadConfirmation]);
+
+    // Add initial "Analyzing..." message from assistant
+    const analyzingMessageId = `analysis-${Date.now()}`;
+    const analyzingMessage: Message = {
+      id: analyzingMessageId,
       content: `📄 **Uploading "${file.name}"...**\n\n🔍 Analyzing your document with AI. This may take a moment...`,
       role: 'assistant'
-    }
-    setMessages(prev => [...prev, uploadMessage])
+    };
+    setMessages(prev => [...prev, analyzingMessage]);
 
-    setIsUploading(true)
-    setError('')
+    setIsUploading(true);
+    setError('');
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('chatSessionId', chatSessionId)
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('chatSessionId', chatSessionId);
 
       const response = await fetch('/api/analyze-document', {
         method: 'POST',
         body: formData,
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (!response.ok) {
         if (response.status === 403) {
-          setShowUpgradeModal(true) // Open upgrade modal on 403 (forbidden)
-          return
+          setShowUpgradeModal(true); // Open upgrade modal on 403 (forbidden)
+          // Remove the "Analyzing..." message if an upgrade is required
+          setMessages(prev => prev.filter(msg => msg.id !== analyzingMessageId));
+          return;
         }
-        throw new Error(data.error || 'Failed to analyze document')
+        throw new Error(data.error || 'Failed to analyze document');
       }
 
-      // Replace the "analyzing" message with the actual analysis
+      // Update the "analyzing" message with the actual analysis result
       setMessages(prev => prev.map(msg =>
-        msg.id === uploadMessage.id
-          ? { ...msg, content: data.analysis, id: Date.now().toString() }
+        msg.id === analyzingMessageId
+          ? { ...msg, content: data.analysis, id: (Date.now() + 1).toString() } // Update ID to ensure unique, final message
           : msg
-      ))
+      ));
 
-      setShowFileUpload(false) // Hide upload area after successful upload
+      setShowFileUpload(false); // Hide upload area after successful upload
+
+      // IMPORTANT: Now, send a follow-up message to the chat API to give the AI context
+      // This will ensure the AI "remembers" the document and continues the conversation.
+      setIsTyping(true);
+      const followUpResponse = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          // This "message" is an internal prompt for the AI to continue based on the document
+          message: `The user has just uploaded and I have analyzed a document. The summary/analysis I provided to the user was: "${data.analysis}". Now, prompt the user to ask further questions about the document or their immigration needs. Keep your response concise and conversational.`,
+          chatSessionId: chatSessionId,
+          language: currentLanguage // Ensure language is passed
+        }),
+      });
+
+      const followUpData = await followUpResponse.json();
+
+      if (!followUpResponse.ok) {
+        throw new Error(followUpData.error || 'Failed to get follow-up AI response after document analysis');
+      }
+
+      // Add the AI's follow-up question/response to the chat
+      const aiFollowUpMessage: Message = {
+        id: (Date.now() + 2).toString(),
+        content: followUpData.response,
+        role: 'assistant'
+      };
+      setMessages(prev => [...prev, aiFollowUpMessage]);
+
+
+      // Update user data from the chat API response
+      if (userData && followUpData.messageCount !== undefined) {
+        setUserData({
+          ...userData,
+          message_count: followUpData.messageCount
+        });
+      }
 
     } catch (error) {
-      console.error('Error uploading file:', error)
-      // Replace the "analyzing" message with error message
+      console.error('Error uploading file or getting follow-up AI response:', error);
+      // Update the "analyzing" message with error message
       setMessages(prev => prev.map(msg =>
-        msg.id === uploadMessage.id
+        msg.id === analyzingMessageId
           ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${(error as Error).message || 'Please try again.'}`, id: Date.now().toString() }
           : msg
-      ))
-      setError((error as Error).message || 'Failed to analyze document. Please try again.')
+      ));
+      setError((error as Error).message || 'Failed to analyze document. Please try again.');
     } finally {
-      setIsUploading(false)
+      setIsUploading(false);
+      setIsTyping(false); // Stop typing indicator after full flow
     }
-  }
+  };
+
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -519,7 +574,7 @@ function ChatContent() {
               onFileUpload={handleFileUpload}
               isUploading={isUploading}
               disabled={!isPremium}
-              onUpgradeClick={() => setShowUpgradeModal(true)} // Pass the function here!
+              onUpgradeClick={() => setShowUpgradeModal(true)}
             />
           </div>
         )}
@@ -573,7 +628,7 @@ function ChatContent() {
 
               {!isPremium && (
                 <button
-                  onClick={() => setShowUpgradeModal(true)} // Changed this to open the modal directly
+                  onClick={() => setShowUpgradeModal(true)}
                   className="text-yellow-400 hover:text-yellow-300 text-xs underline"
                 >
                   Premium Feature
