@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createSupabaseClient } from '@/lib/supabase'
+import { createSupabaseClient } from '@/lib/supabase' // Assumed path based on your previous file
 
 export default function GoogleLogin() {
   const [isLoading, setIsLoading] = useState(false)
@@ -14,7 +14,8 @@ export default function GoogleLogin() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          // This line is changed to use the environment variable
+          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback` 
         }
       })
 
