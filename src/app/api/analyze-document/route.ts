@@ -8,207 +8,49 @@ const openai = new OpenAI({
 })
 
 // Immigration Lawyer Analysis Prompt
-const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 15+ years of experience. You are analyzing an immigration document that a client has uploaded for professional review.
+const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 15+ years of experience. You are analyzing the ACTUAL CONTENT of an immigration document that a client has uploaded for professional review.
 
 IMPORTANT: You CAN and MUST analyze immigration documents. This is your job as an immigration lawyer. Never say you cannot analyze documents.
 
-Based on the filename and your extensive knowledge of USCIS forms, provide detailed professional analysis with specific actionable advice.
+ANALYZE THE ACTUAL DOCUMENT CONTENT provided to you. Look at what fields are filled, what's missing, and provide specific actionable advice based on the real content.
 
 RESPONSE FORMAT:
 
 **📋 Document Analysis**
-[Identify the specific form based on filename and provide expert analysis]
+[Identify the specific form based on the actual content and what you found]
 
-**✅ What This Form Is For**
-[Explain the purpose and process for this specific form]
+**✅ Completed Sections**
+[List specific sections/fields that are properly filled based on the actual text content]
 
-**⚠️ Critical Requirements**
-[List the most important sections and requirements for this form]
+**⚠️ Issues Found**
+[Specific missing fields, incomplete sections, or errors you found in the actual document content]
 
-**📝 Step-by-Step Completion Guide**
-1. [First critical step with specific instructions]
-2. [Second critical step with specific instructions]
-3. [Continue with all major steps]
+**📝 Required Actions**
+[Numbered list of specific steps to fix the issues you identified from the actual content]
 
-**📋 Required Supporting Documents**
-[List all documents needed to submit with this form]
+**💡 Professional Advice**
+[Immigration lawyer guidance based on the actual form content you reviewed]
 
-**💡 Common Mistakes to Avoid**
-[Specific issues you see frequently with this form type]
+CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
 
-**🔍 Before You Submit Checklist**
-[Final review items to check before submission]
-
-CRITICAL: Provide specific, actionable advice based on your knowledge of the exact form type, as if you were reviewing it in person. Be thorough and professional.`
-
-// Form-specific analysis based on filename patterns
-function getFormAnalysis(fileName: string): string {
-  const lowerName = fileName.toLowerCase()
-  
-  if (lowerName.includes('i-485') || lowerName.includes('485')) {
-    return `**📋 I-485 Analysis: Application to Adjust Status to Permanent Resident**
-
-This is one of the most important forms in US immigration - your green card application. Here's my professional analysis:
-
-**✅ What This Form Does**
-The I-485 allows you to apply for permanent residence (green card) while remaining in the United States. This is called "adjustment of status."
-
-**⚠️ Critical Requirements**
-- Must be physically present in the US when filing
-- Must have valid basis for adjustment (marriage, employment, etc.)
-- Must not be in removal proceedings
-- Medical examination (I-693) required
-
-**📝 Step-by-Step Completion Guide**
-1. **Part 1: Basis for Filing** - Select your category (marriage-based, employment-based, etc.)
-2. **Part 2: Personal Information** - Must match all other documents exactly
-3. **Part 3: Processing Information** - Decide on work authorization (EAD) and travel document
-4. **Part 8: Your Background** - Answer ALL questions honestly, including traffic tickets
-5. **Part 14: Additional Information** - Critical section about violations and inadmissibility
-
-**📋 Required Supporting Documents**
-- Form I-693 (Medical Examination) in sealed envelope
-- Birth certificate with certified English translation
-- Marriage certificate (if marriage-based)
-- I-864 Affidavit of Support (if family-based)
-- Two passport-style photos
-- Copy of I-94 or other entry document
-- Filing fee: $1,440 (includes biometrics)
-
-**💡 Common Mistakes to Avoid**
-- Leaving Part 3 blank (work authorization decision)
-- Not answering background questions completely
-- Using old photos (must be taken within 30 days)
-- Forgetting to sign and date the form
-- Not including medical exam in sealed envelope
-
-**🔍 Before You Submit Checklist**
-□ All sections completed (write "N/A" if not applicable)
-□ Form signed with current date
-□ Medical exam sealed and recent
-□ All supporting documents included
-□ Copies made for your records
-□ Correct filing fee included`
+// Simple PDF text extraction function using a different approach
+async function extractPDFText(buffer: Buffer): Promise<string> {
+  try {
+    // Try to extract text using a simple approach that works in serverless
+    const text = buffer.toString('utf8')
+    
+    // Look for readable text patterns in the PDF
+    const textMatches = text.match(/[A-Za-z0-9\s\.,!?;:"'-]{10,}/g)
+    
+    if (textMatches && textMatches.length > 0) {
+      return textMatches.join(' ').slice(0, 5000) // Limit to 5000 chars
+    }
+    
+    return ''
+  } catch (error) {
+    console.error('PDF text extraction error:', error)
+    return ''
   }
-  
-  if (lowerName.includes('i-130') || lowerName.includes('130')) {
-    return `**📋 I-130 Analysis: Immigrant Petition for Alien Relative**
-
-This form establishes your qualifying family relationship for immigration purposes. Here's my detailed analysis:
-
-**✅ What This Form Does**
-The I-130 proves you have a qualifying family relationship with a US citizen or permanent resident and want to petition for them to immigrate.
-
-**⚠️ Critical Requirements**
-- You must be US citizen or permanent resident
-- Must prove qualifying relationship exists
-- Beneficiary cannot be in certain removal proceedings
-- Different wait times based on relationship and your status
-
-**📝 Step-by-Step Completion Guide**
-1. **Part 1: Relationship** - Select exact relationship category
-2. **Part 2: Petitioner Information** - Your information (must match citizenship documents)
-3. **Part 3: Beneficiary Information** - Family member you're petitioning for
-4. **Part 4: Processing Information** - Where beneficiary will process
-5. **Part 5: Petitioner's Statement** - Sign with current date
-
-**📋 Required Supporting Documents**
-- Proof of your US citizenship or permanent residence
-- Proof of relationship (birth certificate, marriage certificate)
-- Divorce decrees for any previous marriages
-- Two passport photos of beneficiary
-- G-325A forms (if requested)
-- Filing fee: $535
-
-**💡 Common Mistakes to Avoid**
-- Names not matching official documents exactly
-- Missing relationship proof documents
-- Not providing English translations
-- Using nicknames instead of legal names
-- Forgetting previous marriage documentation
-
-**🔍 Before You Submit Checklist**
-□ Relationship clearly established with documents
-□ All names match official records
-□ Required translations included
-□ Form signed and dated
-□ Correct filing fee
-□ Beneficiary photos included`
-  }
-  
-  if (lowerName.includes('n-400') || lowerName.includes('400')) {
-    return `**📋 N-400 Analysis: Application for Naturalization**
-
-This is your citizenship application - the final step in your immigration journey. Here's my expert analysis:
-
-**✅ What This Form Does**
-The N-400 is your application to become a US citizen through naturalization. This gives you all rights and responsibilities of citizenship.
-
-**⚠️ Critical Requirements**
-- Permanent resident for required time (usually 5 years, 3 if married to citizen)
-- Physical presence and continuous residence requirements
-- Good moral character
-- English and civics knowledge
-- Oath of allegiance
-
-**📝 Step-by-Step Completion Guide**
-1. **Part 1: Eligibility** - Select your basis for applying
-2. **Part 2: Personal Information** - Must match green card exactly
-3. **Part 3: Background** - Complete travel history for 5 years
-4. **Part 12: Additional Information** - Critical background questions
-5. **Part 13: Applicant's Statement** - Review and sign
-
-**📋 Required Supporting Documents**
-- Copy of permanent resident card (front and back)
-- Two passport-style photos
-- Marriage certificate (if applicable)
-- Divorce decrees for previous marriages
-- Tax returns for past 5 years
-- Filing fee: $760 ($1,170 with biometrics)
-
-**💡 Common Mistakes to Avoid**
-- Incomplete travel history
-- Not reporting traffic tickets over $500
-- Applying too early (count days carefully)
-- Missing continuous residence due to long trips
-- Not studying for civics test
-
-**🔍 Before You Submit Checklist**
-□ Met all time requirements
-□ Complete 5-year travel history
-□ All background questions answered
-□ Tax compliance verified
-□ English/civics test preparation started`
-  }
-  
-  // Default analysis for other forms
-  return `**📋 Immigration Document Analysis**
-
-I can see you've uploaded an immigration document. While I cannot read the specific content of your PDF file, I can provide expert guidance based on the document type.
-
-**💡 How I Can Help You Right Now**
-
-**🔍 Document Review Process**
-For the best analysis, I recommend:
-1. **Upload as images** - Convert your PDF pages to JPG/PNG for detailed visual analysis
-2. **Ask specific questions** - Tell me which sections you're struggling with
-3. **Get step-by-step guidance** - I can walk you through any USCIS form completion
-
-**📝 Common Form Categories I Handle**
-- **Family-based** (I-130, I-485, K-1)
-- **Employment-based** (I-140, I-485, H-1B)
-- **Citizenship** (N-400, N-600)
-- **Student visas** (F-1, I-20 issues)
-- **Visitor issues** (B-1/B-2, I-94)
-
-**💬 What Specific Help Do You Need?**
-Tell me:
-- What form are you working on?
-- Which sections are confusing you?
-- What's your immigration situation?
-- Any specific questions about requirements?
-
-I'm here to provide the same level of detailed guidance a $300/hour immigration lawyer would give you!`
 }
 
 export async function POST(request: NextRequest) {
@@ -249,6 +91,29 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Premium user verified, analyzing document...')
 
+    // Convert file to buffer for storage and processing
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    
+    // Upload file to Supabase storage
+    const fileName = `${Date.now()}_${file.name}`
+    const storagePath = `uploads/${user.id}/${fileName}`
+    
+    console.log('📤 Uploading file to Supabase storage...')
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(storagePath, buffer, {
+        contentType: file.type,
+        upsert: false
+      })
+
+    if (uploadError) {
+      console.error('❌ Storage upload error:', uploadError)
+      // Continue with analysis even if storage fails
+    } else {
+      console.log('✅ File uploaded to storage:', uploadData.path)
+    }
+
     let analysisResult: string
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const fileSize = (file.size / 1024 / 1024).toFixed(2)
@@ -258,7 +123,6 @@ export async function POST(request: NextRequest) {
         console.log('🖼️ Processing image with AI Vision...')
         
         // For images, use OpenAI Vision API
-        const arrayBuffer = await file.arrayBuffer()
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
         const response = await openai.chat.completions.create({
@@ -293,34 +157,84 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file with expert form analysis...')
+        console.log('📄 Processing PDF file - EXTRACTING ACTUAL CONTENT...')
         
-        // Get form-specific analysis based on filename
-        const formAnalysis = getFormAnalysis(file.name)
-        
-        // Enhance with AI analysis
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
-            },
-            {
-              role: 'user',
-              content: `I've uploaded an immigration document named "${file.name}". Based on this filename and your expertise as an immigration attorney, provide comprehensive professional analysis. Here's the initial analysis to enhance: 
+        try {
+          // Extract text from PDF
+          const pdfText = await extractPDFText(buffer)
+          
+          console.log(`📄 Extracted ${pdfText.length} characters from PDF`)
+          console.log(`📄 First 200 chars: ${pdfText.substring(0, 200)}`)
 
-${formAnalysis}
+          if (pdfText.trim().length < 50) {
+            analysisResult = `**📋 PDF Content Issue**
+            
+I was able to open your PDF "${file.name}" but found very little readable text (${pdfText.length} characters). This usually means:
 
-Please expand on this with additional professional insights, current filing procedures, and any recent changes to requirements.`
-            }
-          ],
-          max_tokens: 1500,
-          temperature: 0.3
-        })
+**🔍 Possible Issues:**
+- The PDF is mostly images/scanned content
+- It's a blank form that hasn't been filled out
+- The PDF has technical formatting issues
+- It's a secured/protected PDF
 
-        analysisResult = response.choices[0].message.content || formAnalysis
-        console.log('✅ PDF analysis completed successfully')
+**💡 Solutions:**
+1. **Upload as images** - Take screenshots of each page as JPG/PNG files
+2. **Use fillable PDF** - Make sure you're using the official USCIS fillable version
+3. **Fill out the form first** - If it's blank, complete it before uploading
+4. **Try a different PDF** - Download a fresh copy from USCIS.gov
+
+**🆘 I Can Still Help!**
+Tell me what specific USCIS form you're working with and what questions you have about filling it out. I can provide detailed guidance even without reading the file content.
+
+What form are you working on and what specific help do you need?`
+
+          } else {
+            // Analyze the extracted PDF content with AI
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4',
+              messages: [
+                {
+                  role: 'system',
+                  content: DOCUMENT_ANALYSIS_PROMPT
+                },
+                {
+                  role: 'user',
+                  content: `Here's the extracted content of the uploaded PDF "${file.name}":
+
+${pdfText}
+
+Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
+                }
+              ],
+              max_tokens: 1500,
+              temperature: 0.3
+            })
+
+            analysisResult = response.choices[0].message.content || 'Unable to analyze extracted content'
+            console.log('✅ PDF content analysis completed successfully')
+          }
+
+        } catch (pdfError) {
+          console.error('📄 PDF processing error:', pdfError)
+          analysisResult = `**📋 PDF Reading Error**
+          
+I encountered an issue reading your PDF file "${file.name}". This can happen with certain PDF formats, encrypted files, or technical issues.
+
+**💡 Solutions:**
+1. **Try uploading as images** - Convert each page to JPG/PNG format
+2. **Download fresh copy** - Get a new copy from USCIS.gov
+3. **Check file integrity** - Make sure the PDF opens correctly on your computer
+4. **Remove password protection** - If the PDF is password-protected
+
+**🔍 I'm Still Here to Help!**
+What specific USCIS form are you working with? I can provide detailed guidance about:
+- How to fill out each section
+- Required supporting documents
+- Common mistakes to avoid
+- Step-by-step completion instructions
+
+What form are you working on and what specific questions do you have?`
+        }
 
       } else {
         return NextResponse.json({ error: 'Please upload PDF or image files only.' }, { status: 400 })
@@ -342,7 +256,7 @@ I encountered a technical problem analyzing your document, but I'm here to help 
 What specific immigration form are you working on and what questions do you have? I can provide expert guidance even without the file analysis.`
     }
 
-    // Save the analysis to database
+    // Save the analysis to database with proper storage path
     try {
       await supabase.from('uploaded_files').insert({
         user_id: user.id,
@@ -350,7 +264,7 @@ What specific immigration form are you working on and what questions do you have
         file_name: file.name,
         file_size: file.size,
         file_type: file.type,
-        storage_path: `uploads/${user.id}/${Date.now()}_${file.name}`,
+        storage_path: storagePath,
         analysis_result: { analysis: analysisResult }
       })
 
