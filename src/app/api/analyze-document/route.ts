@@ -130,13 +130,15 @@ export async function POST(request: NextRequest) {
           
           let fullText = ''
           
-          // Extract text from all pages
+          // Extract text from all pages - simplified approach
           for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum)
             const textContent = await page.getTextContent()
             
-            const pageText = textContent.items
-              .filter((item): item is { str: string } => 'str' in item)
+            // Use any type to bypass strict typing issues
+            const items = textContent.items as any[]
+            const pageText = items
+              .filter(item => item && item.str)
               .map(item => item.str)
               .join(' ')
             
