@@ -3,6 +3,7 @@ import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import * as pdfjsLib from 'pdfjs-dist'
+import type { TextItem } from 'pdfjs-dist/types/src/display/api'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -36,6 +37,10 @@ RESPONSE FORMAT:
 [Immigration lawyer guidance based on the actual form content]
 
 CRITICAL: Base your analysis on the ACTUAL document text content, not assumptions from the filename.`
+
+function hasStr(item: unknown): item is TextItem {
+  return typeof item === 'object' && item !== null && 'str' in item
+}
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
@@ -130,15 +135,13 @@ export async function POST(request: NextRequest) {
           
           let fullText = ''
           
-          // Extract text from all pages - simplified approach
+          // Extract text from all pages with proper typing
           for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
             const page = await pdfDoc.getPage(pageNum)
             const textContent = await page.getTextContent()
             
-            // Use any type to bypass strict typing issues
-            const items = textContent.items as any[]
-            const pageText = items
-              .filter(item => item && item.str)
+            const pageText = textContent.items
+              .filter(hasStr)
               .map(item => item.str)
               .join(' ')
             
