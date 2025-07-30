@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import * as pdfParse from 'pdf-parse'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -137,71 +138,103 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file - Using GPT-4 Vision for PDF analysis...')
+        console.log('📄 Processing PDF file - USING REAL PDF PARSER...')
         
         try {
-          // Convert PDF buffer to base64 for GPT-4 Vision
-          // This is a workaround since GPT-4 Vision can handle PDF files directly
-          const fileBase64 = buffer.toString('base64')
+          // Use real PDF parser that handles structure properly
+          console.log('🔍 Parsing PDF with pdf-parse...')
+          const pdfData = await pdfParse(buffer)
+          const rawPdfText = pdfData.text
+          
+          console.log(`📄 Raw extracted: ${rawPdfText.length} characters`)
+          console.log(`📄 PDF info: ${pdfData.numpages} pages`)
+          
+          // Clean and limit text for token management
+          const cleanText = rawPdfText.trim().replace(/\s+/g, ' ')
+          const limitedText = cleanText.slice(0, 7000) // ~90% of 8K tokens for GPT-4
+          
+          console.log(`📄 Final text: ${limitedText.length} characters (limited for tokens)`)
+          console.log(`📄 First 300 chars: ${limitedText.substring(0, 300)}`)
 
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4-vision-preview',
-            messages: [
-              {
-                role: 'system',
-                content: DOCUMENT_ANALYSIS_PROMPT
-              },
-              {
-                role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `Please analyze this immigration PDF document "${file.name}". Read the actual content of the PDF, identify what form this is, what sections are completed, what's missing, and give specific actionable advice as Sarah Chen, immigration attorney. Look at the actual filled fields and content, not just the filename.`
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:${file.type};base64,${fileBase64}`,
-                      detail: 'high'
-                    }
-                  }
-                ]
-              }
-            ],
-            max_tokens: 1500,
-            temperature: 0.3
-          })
+          if (limitedText.trim().length < 100) {
+            analysisResult = `**📋 PDF Content Issue**
+            
+I was able to open your PDF "${file.name}" but found very little readable text (${limitedText.length} characters). This usually means:
 
-          analysisResult = response.choices[0].message.content || 'Unable to analyze PDF document'
-          console.log('✅ PDF analysis completed with GPT-4 Vision')
+**🔍 Possible Issues:**
+- The PDF is mostly images/scanned content without OCR text
+- It's a blank form that hasn't been filled out
+- The PDF is password-protected or corrupted
+- It's a purely visual form without embedded text
+
+**💡 Solutions:**
+1. **Upload as images** - Take screenshots of each page as JPG/PNG files (best option)
+2. **Use OCR first** - Run the PDF through an OCR tool to make text searchable
+3. **Use fillable PDF** - Download the official USCIS fillable version
+4. **Fill out the form first** - If it's blank, complete it before uploading
+
+**🖼️ Why Images Work Better:**
+For scanned documents or image-based PDFs, uploading as images gives me perfect visual access to see exactly what's filled out, signatures, dates, and formatting.
+
+**💬 What Would You Like to Do?**
+Would you prefer to upload the form as images, or tell me what specific form you're working with and what questions you have?`
+
+          } else {
+            // Analyze the properly extracted PDF content with AI
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4',
+              messages: [
+                {
+                  role: 'system',
+                  content: DOCUMENT_ANALYSIS_PROMPT
+                },
+                {
+                  role: 'user',
+                  content: `Here's the extracted content of the uploaded PDF "${file.name}":
+
+${limitedText}
+
+Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
+                }
+              ],
+              max_tokens: 1500,
+              temperature: 0.3
+            })
+
+            analysisResult = response.choices[0].message.content || 'Unable to analyze extracted content'
+            console.log('✅ PDF content analysis completed successfully')
+          }
 
         } catch (pdfError) {
-          console.error('📄 PDF processing error:', pdfError)
+          console.error('📄 PDF parsing error:', pdfError)
           
-          // Fallback: Ask user to convert to images
-          analysisResult = `**📋 PDF Analysis Issue**
+          // Fallback: Recommend image upload
+          analysisResult = `**📋 PDF Parsing Error**
           
-I encountered a technical issue reading your PDF file "${file.name}". This can happen with certain PDF formats or complex documents.
+I encountered an issue parsing your PDF file "${file.name}". This can happen with complex PDF formats, scanned documents, or encrypted files.
 
-**💡 Best Solution for Accurate Analysis:**
+**💡 Best Solution - Upload as Images:**
 
-**🖼️ Convert PDF to Images (Recommended)**
+**🖼️ Convert to Images (Most Reliable)**
 1. Open your PDF file on your computer  
 2. Take screenshots of each page (or use "Save as Image")
 3. Upload each page as JPG/PNG files
-4. I'll analyze each page with perfect accuracy using AI vision
+4. I'll analyze each page with perfect accuracy
 
-**📋 Alternative: Tell Me About Your Form**
-If you can't convert to images, please tell me:
-- What type of immigration form is this? (I-485, I-130, N-400, etc.)
-- What sections are you having trouble with?
-- Any specific questions about filling it out?
+**📋 Why This Works Better:**
+- Images bypass all PDF parsing issues
+- I can see filled fields, handwriting, signatures, dates
+- Works with scanned forms, filled forms, any format
+- Gives me the same view you see on screen
 
-**🔍 Why Images Work Better:**
-Images give me perfect visual access to see exactly what's filled out, what's missing, signatures, dates, and formatting - just like reviewing the form in person.
+**🔍 Alternative Help:**
+If you can't convert to images right now, tell me:
+- What type of immigration form is this?
+- What sections are you struggling with?
+- Any specific questions about completion?
 
 **💬 What Would You Prefer?**
-Would you like to upload the form as images, or tell me about the specific form and questions you have?`
+Upload as images for detailed analysis, or tell me about your specific form questions?`
         }
 
       } else {
