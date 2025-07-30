@@ -12,21 +12,27 @@ export default function DatabaseTest() {
         const supabase = createSupabaseClient()
 
         // Test basic connection by trying to select from users table
-        const { data, error, count } = await supabase // Added 'count' to destructuring
+        // We only need 'error' and 'count' from the response.
+        // Removed 'data' from destructuring to resolve the 'no-unused-vars' warning.
+        const { error, count } = await supabase
           .from('users')
-          .select('id', { count: 'exact', head: true }); // Changed to 'id' (or any other column)
+          .select('id', { count: 'exact', head: true });
 
         if (error) {
           setConnectionStatus(`❌ Connection Error: ${error.message}`);
           setTableCount(0); // Reset count on error
         } else {
           setConnectionStatus('✅ Database Connected Successfully!');
-          // The fix: Use the 'count' property returned directly by Supabase,
-          // which is available when `count: 'exact'` is used in the options.
           setTableCount(count || 0);
         }
-      } catch (err: any) { // Type 'err' as any for more flexible error handling
-        setConnectionStatus(`❌ Connection Failed: ${err.message || String(err)}`); // Use String(err) for non-Error objects
+      } catch (err) { // Removed ': any' to resolve 'no-explicit-any' error
+        // The type of 'err' in a catch block is 'unknown' by default in TypeScript 3.8+
+        // We need to safely check its properties before using them.
+        if (err instanceof Error) {
+          setConnectionStatus(`❌ Connection Failed: ${err.message}`);
+        } else {
+          setConnectionStatus(`❌ Connection Failed: ${String(err)}`); // Fallback for non-Error objects
+        }
         setTableCount(0); // Reset count on error
       }
     }
