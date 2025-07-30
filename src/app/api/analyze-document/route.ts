@@ -119,6 +119,8 @@ export async function POST(request: NextRequest) {
           out_dir: tempDir,
           out_prefix: path.basename(file.name, path.extname(file.name)),
           page: null, // Convert all pages
+          popplerPath: '/usr/bin', // ADDED THIS LINE
+          convert_to_pdf: false // ADDED THIS LINE
         })
         console.log(`PDF converted to images. Output paths: ${outputImages}`)
 
@@ -210,7 +212,7 @@ What specific parts of your immigration form are you struggling with, or what qu
 
       // Insert AI message into chat
       await supabase.from('messages').insert({
-        chat_session_id: chatSessionId,
+        chat_session_id: chatSession_id,
         user_id: user.id,
         content: analysisResult,
         role: 'assistant',
