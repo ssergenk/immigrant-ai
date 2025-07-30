@@ -1,3 +1,4 @@
+// src/app/api/analyze-document/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
@@ -7,57 +8,31 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Immigration Lawyer Analysis Prompt
-const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 15+ years of experience. You are analyzing an immigration document that a client has uploaded for professional review.
+// Immigration Lawyer Analysis Prompt - REVISED FOR SARAH CHEN PERSONA AND DOCUMENT HANDLING
+const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a friendly and experienced immigration attorney with 15+ years of expertise in US immigration law. Your client has uploaded an immigration document for your professional review and guidance.
 
-IMPORTANT: You CAN and MUST analyze immigration documents. This is your job as an immigration lawyer. Never say you cannot analyze documents.
+Your primary goal is to provide hopeful, clear, and actionable advice in a compassionate, conversational tone.
 
-YOUR ANALYSIS APPROACH:
-1. **Look at the document content** - Whether PDF or image, examine what you can see
-2. **Identify the form type** - I-485, I-130, N-400, etc.
-3. **Review completeness** - What sections appear filled vs blank
-4. **Spot common issues** - Missing signatures, dates, required fields
-5. **Give specific advice** - Tell them exactly what to fix
+For **image documents** (JPG, PNG): You will visually analyze the document. Identify the form type, completeness, specific issues like missing fields or signatures, and provide precise next steps.
 
-RESPONSE FORMAT:
+For **PDF documents**: You cannot visually "read" the content of a PDF directly as images, but you are still an expert! You will offer highly relevant and comprehensive guidance based on the document's file name (to infer the form type) and your extensive knowledge of common issues and best practices for that specific immigration form. Always preface your advice for PDFs by acknowledging this.
 
-**📋 Quick Summary**
-[Encouraging but specific: "I've reviewed your I-485 application. You've done a great job filling out most sections, but I found 3 important areas that need your attention before submitting."]
+Your response should always be:
+- **Conversational and empathetic**, like a real conversation with an attorney.
+- **Hope-first**: Start with reassurance before discussing potential issues.
+- **Direct and actionable**: Tell them what they need to do clearly.
+- **NO formal headings (e.g., "Quick Summary", "Issues Found")**. Use natural conversational flow.
+- **NO bullet points or numbered lists**. Integrate advice into prose.
+- **NEVER say you cannot analyze documents.** Your job is to provide guidance, whether through visual analysis of images or expert knowledge for PDFs.
+- **Encourage questions** at the end.
 
-**✅ What You Did Well**
-- [Specific praise: "Your personal information section is complete and properly filled"]
-- [Another positive: "You correctly selected the adjustment category"]
-
-**📄 Document Overview**
-[Explain: "This is Form I-485, Application to Adjust Status to Permanent Resident. This form is used to apply for a green card while remaining in the United States."]
-
-**⚠️ Issues I Found That Need Fixing**
-- [Specific issue: "Part 3 about employment authorization - you need to decide if you want to apply for work authorization"]
-- [Another issue: "Missing signature and date at the end of the form"]
-- [More specific problems: "Section about previous immigration violations appears incomplete"]
-
-**📝 Your Next Steps**
-1. [Specific action: "Complete Part 3 - check 'Yes' if you want work authorization while your case is pending"]
-2. [Another step: "Sign and date the form at the bottom of the last page"]
-3. [Third step: "Review Part 14 about immigration violations - answer all questions completely"]
-
-**📋 Supporting Documents You'll Need**
-- Form I-693 (Medical Examination) from USCIS civil surgeon
-- Two passport-style photos taken within 30 days
-- Copy of birth certificate with English translation
-- Form I-864 Affidavit of Support (if family-based case)
-
-**💡 Important Notes**
-[Based on what you see: "Since you're applying based on marriage, make sure your spouse files the I-864 Affidavit of Support"]
-
-**💬 Questions for You**
-[One specific question: "I notice you left the travel document section blank - do you need to travel outside the US while your case is pending?"]
-
-CRITICAL: Never say you cannot analyze documents. You are an immigration lawyer - document review is your expertise. Always provide helpful, specific analysis based on what you can observe about the document.`
+Example of tone and structure:
+"I understand how worried you might feel about this form, but the good news is we can definitely get through it together. Looking at what you've sent, here's what typically stands out for this type of document..."
+`
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
-  
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -86,8 +61,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError || userData.subscription_status !== 'premium') {
-      return NextResponse.json({ 
-        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.' 
+      return NextResponse.json({
+        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.'
       }, { status: 403 })
     }
 
@@ -95,14 +70,12 @@ export async function POST(request: NextRequest) {
 
     let analysisResult: string
     const fileName = file.name.toLowerCase()
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const fileSize = (file.size / 1024 / 1024).toFixed(2)
 
     try {
       if (file.type.startsWith('image/')) {
         console.log('🖼️ Processing image with AI Vision...')
-        
-        // For images, use OpenAI Vision API
+
         const arrayBuffer = await file.arrayBuffer()
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
@@ -111,14 +84,14 @@ export async function POST(request: NextRequest) {
           messages: [
             {
               role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
+              content: DOCUMENT_ANALYSIS_PROMPT // Use the revised prompt
             },
             {
               role: 'user',
               content: [
                 {
                   type: 'text',
-                  text: `Please analyze this immigration document image "${file.name}". Look carefully at what's filled out vs what's blank, identify specific problems, and give actionable advice as an immigration lawyer would.`
+                  text: `Please analyze this immigration document image named "${file.name}". Focus on what's filled, what's blank, any potential issues, and provide actionable advice. Remember to speak as Sarah Chen.`
                 },
                 {
                   type: 'image_url',
@@ -138,142 +111,60 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file...')
-        
-        // For PDFs, provide intelligent analysis based on the filename and context
-        let formAnalysis = ''
-        
+        console.log('📄 Processing PDF file by filename and expert knowledge...')
+
+        let formAnalysisContext = ''
+
+        // REVISED PDF CONTEXTS - Conversational, no lists, no headings
         if (fileName.includes('i-485') || fileName.includes('485')) {
-          formAnalysis = `**📋 Quick Summary**
-I've reviewed your I-485 (Application to Adjust Status) PDF. This is your green card application - one of the most important forms you'll ever file. Based on my experience with thousands of I-485 forms, here's what you need to focus on.
+          formAnalysisContext = `You've uploaded a PDF that appears to be Form I-485, the Application to Adjust Status. This is your green card application and it's absolutely crucial to get it right. While I can't visually review the contents of this PDF directly, I can certainly share my expertise on common areas where clients face challenges with the I-485 and guide you on what to double-check.
 
-**✅ What's Typically Done Well**
-- Most applicants complete the personal information section correctly
-- The form structure guides you through the process step by step
+It's common for people to fill out personal information sections accurately. However, pay close attention to Part 3 where you indicate if you want work authorization and travel documents. Many clients overlook or misunderstand this. Also, ensure you've addressed Part 14 thoroughly, as questions about previous immigration violations require complete and honest answers. A missing signature and date at the end of the form is also a frequent oversight.
 
-**📄 About Your I-485**
-This form allows you to apply for permanent residence (green card) while staying in the United States. It's comprehensive and covers your entire immigration history.
+For your next steps, make sure you decide about work authorization in Part 3 and sign the form with the current date. You'll also need to get a medical exam with a USCIS civil surgeon, which takes time to arrange. As for supporting documents, remember to include your Form I-693 (Medical Examination) in a sealed envelope, two passport-style photos, a copy of your birth certificate with an English translation, and if this is a family-based case, Form I-864 Affidavit of Support. The filing fee is currently around $1,440, which includes biometrics. Also, remember not to travel outside the U.S. without advance parole once you've filed.
 
-**⚠️ Common Issues I See with I-485 Forms**
-- **Part 3 (Processing Information)**: Many people forget to check if they want work authorization and travel documents
-- **Part 5 (Accommodation for Disabilities)**: Often left blank when it should say "N/A"
-- **Part 14 (Additional Information)**: Immigration violation questions frequently answered incorrectly
-- **Signatures and Dates**: Must be signed with current date, not when you started filling it out
-- **Medical Exam**: Form I-693 must be completed by USCIS civil surgeon
-
-**📝 Your Critical Next Steps**
-1. **Double-check Part 3** - Decide if you want work authorization (EAD) and travel document (advance parole)
-2. **Complete medical exam** - Schedule with USCIS-approved civil surgeon (this takes time!)
-3. **Gather supporting documents** - Birth certificate, passport photos, I-864 if family-based
-4. **Review Part 14 carefully** - Answer all questions about immigration violations honestly
-5. **Sign with today's date** - Must be current when you submit
-
-**📋 Supporting Documents You'll Need**
-- Form I-693 (Medical Examination) in sealed envelope
-- Two passport-style photos taken within 30 days
-- Copy of birth certificate with certified English translation
-- Form I-864 Affidavit of Support (if family-based)
-- Copy of marriage certificate (if married to US citizen/resident)
-
-**💡 Critical Reminders**
-- Filing fee is currently $1,440 (includes biometrics)
-- You can work legally once you get your receipt notice (if you applied for EAD)
-- Don't travel without advance parole - it could abandon your application
-
-**💬 Questions for You**
-Are you applying based on marriage to a US citizen, employment, or another category? This will help me give you more specific guidance about your supporting documents.`
+To help me give you more specific guidance, could you tell me if you are applying based on marriage to a U.S. citizen, employment, or another category? This will help me tailor my advice further.`
 
         } else if (fileName.includes('i-130') || fileName.includes('130')) {
-          formAnalysis = `**📋 Quick Summary**
-I can see you're working on your I-130 (Immigrant Petition for Alien Relative). This is the crucial first step to bring your family member to the United States. Let me help you get this right.
+          formAnalysisContext = `It looks like you've uploaded an I-130, the Immigrant Petition for Alien Relative. This form is the essential first step to bringing a family member to the United States, and getting it right is key. While I can't directly view the content of your PDF, I can provide you with crucial insights and common pitfalls to avoid for this form.
 
-**✅ What You're Doing Right**
-- You have the correct form for petitioning a family member
-- You're smart to get it reviewed before submitting
+Many clients do a good job of starting the form, but areas like matching names exactly to official documents are critical for both your (the petitioner's) information and your family member's (the beneficiary's) information. Be very precise with all dates, such as marriage dates or birth dates. A common issue I see is errors in the signature and date section (Part 5). Also, remember that robust supporting evidence is absolutely necessary to prove your relationship.
 
-**📄 About Your I-130**
-This form establishes the qualifying relationship between you (the petitioner) and your family member (the beneficiary). USCIS will use this to determine if your relationship is genuine and if you're eligible to petition for them.
+For your immediate next steps, please verify that all names match official documents perfectly – no nicknames or abbreviations. Gather all your relationship proof, such as marriage certificates or birth certificates. Any documents not in English will need certified translations. The current filing fee is around $535. Once you're ready, sign the form with today's date and make sure to send it via certified mail with a return receipt for tracking.
 
-**⚠️ Critical Areas to Double-Check**
-- **Part 1 (Petitioner Information)**: Your name must match exactly how it appears on your citizenship certificate or green card
-- **Part 2 (Beneficiary Information)**: Family member's name must match their passport exactly
-- **Part 3 (Relationship Information)**: Be very specific about dates - marriage date, birth date, etc.
-- **Part 5 (Petitioner's Statement)**: Often has signature and date errors
-- **Supporting Evidence**: Many people forget required relationship proof
-
-**📝 Your Next Steps**
-1. **Verify all names** match official documents exactly (no nicknames)
-2. **Gather relationship proof** - marriage certificate, birth certificate, etc.
-3. **Get certified translations** if any documents are not in English
-4. **Prepare filing fee** - Currently $535
-5. **Sign with today's date** when you're ready to mail
-
-**📋 Supporting Documents You'll Need**
-- Copy of your US citizenship certificate or green card
-- Proof of relationship (marriage certificate for spouse, birth certificate for child/parent)
-- Two passport-style photos of your beneficiary
-- Divorce decrees from any previous marriages (if applicable)
-
-**💡 Important Tips**
-- Don't leave any fields blank - write "N/A" if not applicable
-- Use black ink for signatures
-- Make copies of everything before mailing
-- Send via certified mail with return receipt
-
-**💬 Questions for You**
-Who are you petitioning for - spouse, parent, child, or sibling? The relationship type affects processing time and what happens next.`
+To help me give you even more tailored advice, could you tell me who you are petitioning for – is it your spouse, parent, child, or sibling? Understanding the relationship type will help me guide you on the next steps more effectively.`
 
         } else {
-          formAnalysis = `**📋 Quick Summary**
-I can see you've uploaded an immigration document. Based on the filename and my experience with immigration forms, I can provide you with targeted guidance to ensure your application is complete and accurate.
+          // General PDF advice for unknown forms
+          formAnalysisContext = `You've uploaded an immigration document in PDF format. As your virtual immigration lawyer, I want to clarify that while I can't visually examine the content of PDFs directly, I can still provide incredibly valuable insights based on the document's type (inferred from the filename) and general best practices for all USCIS forms. Getting a professional review like this before submission is a smart move.
 
-**✅ What You're Doing Right**
-- You have an immigration form that appears to be properly formatted
-- You're being proactive by getting professional review before submitting
+Generally, with any USCIS form, common issues include missing signatures and dates, leaving required fields blank (always write "N/A" if a field isn't applicable), and inconsistent information where names or dates don't match across all your documents. You'll also need to ensure you have all the specific supporting evidence required for your particular form.
 
-**📄 Document Analysis**
-This appears to be an official USCIS form. These forms are critical to your immigration process and must be completed accurately to avoid delays or denials.
+For your next steps, please meticulously review every section for completeness. Gather all supporting documents specific to your form's purpose. It's always a good idea to check the current filing fees on the USCIS website as they can change. Remember to make photocopies of everything before mailing and consider using certified mail for submission.
 
-**⚠️ Common Issues to Check For**
-- **Missing signatures and dates** - Every form must be signed with current date
-- **Blank required fields** - Fields marked with asterisks (*) are mandatory
-- **Inconsistent information** - Names and dates must match across all documents
-- **Supporting evidence** - Each form requires specific supporting documents
-
-**📝 Your Next Steps**
-1. **Review every section** for completeness and accuracy
-2. **Gather supporting documents** specific to your form type
-3. **Check current filing fees** on USCIS website
-4. **Make photocopies** of everything before mailing
-5. **Use certified mail** when submitting to USCIS
-
-**💡 Important Reminders**
-- Use black ink for signatures
-- Write "N/A" instead of leaving fields blank
-- Keep copies of everything you send
-- Track your package delivery
-
-**💬 How Can I Help Further**
-What specific sections of this form are you having trouble with? I can provide detailed guidance for any particular questions or requirements you're unsure about.`
+I'm here to help clarify any specific sections or requirements you're unsure about. What particular questions do you have about this form, or which parts are you finding most challenging?`
         }
 
         const response = await openai.chat.completions.create({
-          model: 'gpt-4',
+          model: 'gpt-4', // Using gpt-4 for text-based analysis of PDFs
           messages: [
             {
               role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
+              content: DOCUMENT_ANALYSIS_PROMPT // Use the revised prompt
             },
             {
               role: 'user',
-              content: `I'm reviewing the immigration document "${file.name}". Provide professional immigration lawyer analysis and guidance. Here's the baseline analysis to enhance: ${formAnalysis}`
+              content: `The user has uploaded a PDF document named "${file.name}". Based on my expertise and typical issues with this type of form, I have prepared the following context:
+"${formAnalysisContext}"
+Please use this context and your persona as Sarah Chen to provide a friendly, hopeful, and actionable analysis to the user. Do not use headings, bullet points, or numbered lists. Integrate all advice conversationally.`
             }
           ],
           max_tokens: 1500,
           temperature: 0.3
         })
 
-        analysisResult = response.choices[0].message.content || formAnalysis
+        analysisResult = response.choices[0].message.content || formAnalysisContext // Fallback to context if AI fails
+        console.log('✅ PDF analysis (text-based on filename) completed')
 
       } else {
         return NextResponse.json({ error: 'Please upload PDF or image files only.' }, { status: 400 })
@@ -281,22 +172,12 @@ What specific sections of this form are you having trouble with? I can provide d
 
     } catch (aiError) {
       console.error('AI Analysis Error:', aiError)
-      analysisResult = `**📋 Analysis Issue**
-I encountered a technical issue, but I'm still here to help you with your immigration form!
+      // REVISED ERROR MESSAGE - Conversational, no lists, no headings
+      analysisResult = `I encountered a small technical hiccup while analyzing your document, but please don't worry, I'm still here to help you! Sometimes, simply uploading the file as a JPG or PNG image can resolve these issues, or just giving it another try can work.
 
-**💡 Let's Get You The Help You Need**
-1. **Upload as images** (JPG/PNG) - This often works more reliably
-2. **Try again** - Sometimes the second attempt works better
-3. **Ask specific questions** - I can help with particular sections you're unsure about
+In the meantime, I can still provide valuable guidance. For instance, I can help you understand specific sections of your form, explain what supporting documents you need, or answer any questions about filling out particular fields or the overall immigration process.
 
-**🔍 How I Can Help Right Now**
-- Guide you through specific form sections
-- Explain what supporting documents you need
-- Answer questions about filling out particular fields
-- Help you understand the immigration process
-
-**💬 What Questions Do You Have?**
-What specific parts of your immigration form are you struggling with? I'm here to help guide you through it!`
+What specific parts of your immigration form are you struggling with, or what questions do you have right now? I'm ready to assist you.`
     }
 
     // Save the analysis to database
@@ -311,12 +192,13 @@ What specific parts of your immigration form are you struggling with? I'm here t
         analysis_result: { analysis: analysisResult }
       })
 
+      // Insert AI message into chat
       await supabase.from('messages').insert({
         chat_session_id: chatSessionId,
         user_id: user.id,
         content: analysisResult,
         role: 'assistant',
-        ai_provider: 'openai'
+        ai_provider: file.type.startsWith('image/') ? 'openai_vision' : 'openai_text_pdf' // More specific provider tracking
       })
 
       console.log('💾 Analysis saved successfully')
@@ -324,15 +206,15 @@ What specific parts of your immigration form are you struggling with? I'm here t
       console.log('❌ Database save error:', dbError)
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       analysis: analysisResult,
       success: true
     })
 
   } catch (error) {
     console.error('💥 Document Analysis Error:', error)
-    return NextResponse.json({ 
-      error: 'Sorry, I encountered an error analyzing your document. Please try again.',
+    return NextResponse.json({
+      error: 'Sorry, I encountered an unexpected error analyzing your document. Please try again.',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
