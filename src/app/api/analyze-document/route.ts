@@ -3,30 +3,39 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import path from 'path' // For path manipulation
+import fs from 'fs/promises' // For file system operations
+import { PdfPoppler } from 'pdf-poppler' // Import the library
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Immigration Lawyer Analysis Prompt - FURTHER REVISED FOR CONCISENESS & NO MENTION OF PDF LIMITATIONS
+// Immigration Lawyer Analysis Prompt - REFINED FOR MULTI-PAGE DOCUMENT ANALYSIS
 const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a friendly, optimistic, and highly experienced US immigration attorney with 15+ years of expertise. Your client has uploaded an immigration document for your professional review and guidance.
 
-Your core mission is to empower and guide. Your responses must be:
+You have received the entire document, potentially as multiple images representing its pages. Your core mission is to empower and guide the client based on your thorough review.
+
+Your responses must be:
 - **Extremely concise and direct**: Get straight to the most important, actionable points.
 - **Always hope-first**: Start with reassurance and a positive outlook.
 - **Conversational and empathetic**: Speak like a trusted advisor, not a robot or a list-maker.
 - **NO formal headings, bullet points, or numbered lists**: Integrate all advice naturally into prose.
-- **Focus on common issues and critical next steps** for the specific document type.
-- **NEVER say you cannot analyze documents.** You are an expert. For PDFs, act as though you understand the document's context based on its name and your vast knowledge of immigration forms. Provide expert guidance for that specific form type.
+- **Focus on common issues, missing information, and critical next steps** for the specific document you have analyzed. Point out specific sections or fields if possible.
+- **NEVER say you cannot analyze documents.** You have thoroughly reviewed the provided pages.
 - **Encourage specific questions from the user** at the end.
 
-Example of desired tone and length for a PDF (e.g., "I-485.pdf"):
-"I understand how important this I-485 application is for you, and the good news is we can navigate this together. Based on common challenges with this form, I'd strongly recommend double-checking Part 3 regarding work authorization and ensuring you've signed and dated everything. Remember to also schedule your medical exam soon. What other questions do you have about the I-485?"
+Example of desired tone and directness:
+"I've reviewed your I-485 application pages, and the good news is we can navigate this together. I'd strongly recommend double-checking Part 3 regarding work authorization, and it looks like the signature and date are missing on the last page. Remember to also schedule your medical exam soon. What other questions do you have about the I-485?"
 
-This tone and brevity is critical.`
+This tone and brevity is critical. Provide analysis based on the entire document, not just general advice from the filename.
+`
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
+
+  // Define a temporary directory for storing PDF pages as images
+  const tempDir = path.join('/tmp', `pdf-temp-${Date.now()}`)
 
   try {
     const formData = await request.formData()
@@ -65,83 +74,126 @@ export async function POST(request: NextRequest) {
 
     let analysisResult: string
     const fileName = file.name.toLowerCase()
-    const fileSize = (file.size / 1024 / 1024).toFixed(2) // Kept for logging/potential future use
+    const fileSize = (file.size / 1024 / 1024).toFixed(2)
+
+    // Array to hold message content for Vision API (text + image_urls)
+    const visionMessagesContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+      {
+        type: 'text',
+        text: `The user has uploaded an immigration document named "${file.name}". Please act as Sarah Chen, analyze the document carefully, and provide concise, hopeful, and actionable expert guidance on common issues, missing information, and critical next steps. If this is a PDF, you are seeing all its pages. Do not use any lists or headings.`
+      }
+    ];
 
     try {
       if (file.type.startsWith('image/')) {
-        console.log('🖼️ Processing image with AI Vision...')
+        console.log('🖼️ Processing single image with AI Vision...')
 
         const arrayBuffer = await file.arrayBuffer()
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4-vision-preview',
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT // Use the revised prompt
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `Please analyze this immigration document image named "${file.name}". Focus on what's filled, what's blank, any potential issues, and provide actionable advice. Remember to speak as Sarah Chen, be concise, and use a conversational tone without lists or headings.`
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:${file.type};base64,${fileBase64}`,
-                    detail: 'high'
-                  }
-                }
-              ]
-            }
-          ],
-          max_tokens: 500, // Reduced max tokens for image analysis too to encourage conciseness
-          temperature: 0.3
-        })
-
-        analysisResult = response.choices[0].message.content || 'Unable to analyze document image.'
-        console.log('✅ Image analysis completed')
+        visionMessagesContent.push({
+          type: 'image_url',
+          image_url: {
+            url: `data:${file.type};base64,${fileBase64}`,
+            detail: 'high'
+          }
+        });
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file based on filename and expert knowledge...')
+        console.log('📄 Processing PDF file by converting to images for AI Vision...')
 
-        // FOR PDFs: Do NOT try to read content. Rely solely on filename and AI's knowledge.
-        // The user message will guide GPT-4 to act as if it's "reviewing" based on its expertise.
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4', // Using gpt-4 for text-based expert analysis of PDFs
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT // Use the revised system prompt
-            },
-            {
-              role: 'user',
-              content: `The user has uploaded a PDF document. Its filename is "${file.name}". As Sarah Chen, provide concise, hopeful, and actionable expert guidance on common issues and critical next steps for this type of immigration form. Do not mention that you cannot visually review the PDF. Just provide the expert analysis directly. Remember to be very brief and conversational, without any lists or headings.`
-            }
-          ],
-          max_tokens: 500, // Reduced max tokens for PDF analysis to enforce brevity
-          temperature: 0.3
+        // Ensure temporary directory exists
+        await fs.mkdir(tempDir, { recursive: true })
+        console.log(`Created temporary directory: ${tempDir}`)
+
+        const pdfBuffer = Buffer.from(await file.arrayBuffer())
+        const pdfPath = path.join(tempDir, file.name)
+        await fs.writeFile(pdfPath, pdfBuffer)
+        console.log(`Saved PDF to temporary path: ${pdfPath}`)
+
+        const poppler = new PdfPoppler(pdfPath)
+
+        const outputImages = await poppler.convert({
+          format: 'jpeg', // Or 'png'
+          out_dir: tempDir,
+          out_prefix: path.basename(file.name, path.extname(file.name)),
+          page: null, // Convert all pages
         })
+        console.log(`PDF converted to images. Output paths: ${outputImages}`)
 
-        analysisResult = response.choices[0].message.content || 'Unable to provide guidance for this PDF.'
-        console.log('✅ PDF analysis (expert knowledge based on filename) completed')
+        // Read each generated image and add to visionMessagesContent
+        const imageFiles = await fs.readdir(tempDir);
+        const sortedImageFiles = imageFiles
+            .filter(name => name.startsWith(path.basename(file.name, path.extname(file.name))) && (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')))
+            .sort((a, b) => {
+                const numA = parseInt(a.match(/-\d+\.(jpg|jpeg|png)$/)?.[0].slice(1, -4) || '0');
+                const numB = parseInt(b.match(/-\d+\.(jpg|jpeg|png)$/)?.[0].slice(1, -4) || '0');
+                return numA - numB;
+            });
+
+
+        for (const imageName of sortedImageFiles) {
+          const imagePath = path.join(tempDir, imageName);
+          const imageBuffer = await fs.readFile(imagePath);
+          const imageBase64 = imageBuffer.toString('base64');
+          
+          visionMessagesContent.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:image/jpeg;base64,${imageBase64}`, // Assuming jpeg for output, adjust if format changes
+              detail: 'high'
+            }
+          });
+          console.log(`Added image ${imageName} to Vision API content.`)
+        }
+
+        if (visionMessagesContent.length === 1) { // Only the initial text message, no images added
+             throw new Error("No images were generated from the PDF. Ensure PDF is valid and poppler-utils is configured.");
+        }
 
       } else {
         return NextResponse.json({ error: 'Please upload PDF or image files only.' }, { status: 400 })
       }
 
+      // Send the content (text + image_urls) to OpenAI Vision API
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4-vision-preview', // This model handles both text and images
+        messages: [
+          {
+            role: 'system',
+            content: DOCUMENT_ANALYSIS_PROMPT // Use the detailed system prompt
+          },
+          {
+            role: 'user',
+            content: visionMessagesContent // This now contains text and all image URLs (pages)
+          }
+        ],
+        max_tokens: 1500, // Increased max tokens as analysis will be more detailed
+        temperature: 0.3
+      })
+
+      analysisResult = response.choices[0].message.content || 'Unable to analyze document.'
+      console.log('✅ Document analysis completed (Vision API used for all pages/images)')
+
     } catch (aiError) {
       console.error('AI Analysis Error:', aiError)
-      // REVISED ERROR MESSAGE - Conversational, no lists, no headings
-      analysisResult = `I encountered a small technical hiccup while analyzing your document, but please don't worry, I'm still here to help you! Sometimes, simply uploading the file as a JPG or PNG image can resolve these issues, or just giving it another try can work.
+      analysisResult = `I encountered a small technical hiccup while analyzing your document, but please don't worry, I'm still here to help you! It seems there was an issue processing the file, but sometimes, trying again or uploading the pages as separate JPG or PNG images can work.
 
 In the meantime, I can still provide valuable guidance. For instance, I can help you understand specific sections of your form, explain what supporting documents you need, or answer any questions about filling out particular fields or the overall immigration process.
 
 What specific parts of your immigration form are you struggling with, or what questions do you have right now? I'm ready to assist you.`
+    } finally {
+      // Clean up temporary directory and files
+      try {
+        if (await fs.stat(tempDir).then(stats => stats.isDirectory()).catch(() => false)) {
+          await fs.rm(tempDir, { recursive: true, force: true })
+          console.log(`Cleaned up temporary directory: ${tempDir}`)
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up temporary directory:', cleanupError)
+      }
     }
+
 
     // Save the analysis to database
     try {
@@ -161,7 +213,7 @@ What specific parts of your immigration form are you struggling with, or what qu
         user_id: user.id,
         content: analysisResult,
         role: 'assistant',
-        ai_provider: file.type.startsWith('image/') ? 'openai_vision' : 'openai_text_pdf' // More specific provider tracking
+        ai_provider: 'openai_vision_pdf_image' // Indicates Vision was used for PDF/Image
       })
 
       console.log('💾 Analysis saved successfully')
@@ -176,6 +228,15 @@ What specific parts of your immigration form are you struggling with, or what qu
 
   } catch (error) {
     console.error('💥 Document Analysis Error:', error)
+    // Ensure cleanup even if initial try block fails
+    try {
+        if (await fs.stat(tempDir).then(stats => stats.isDirectory()).catch(() => false)) {
+          await fs.rm(tempDir, { recursive: true, force: true })
+          console.log(`Cleaned up temporary directory due to initial error: ${tempDir}`)
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up temporary directory after initial error:', cleanupError)
+      }
     return NextResponse.json({
       error: 'Sorry, I encountered an unexpected error analyzing your document. Please try again.',
       details: error instanceof Error ? error.message : 'Unknown error'
