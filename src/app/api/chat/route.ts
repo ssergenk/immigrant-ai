@@ -86,10 +86,10 @@ export async function POST(request: NextRequest) {
       .limit(10)
 
     // Prepare conversation history for OpenAI
-    const conversationHistory: Array<{ role: string; content: string }> = [
+    const conversationHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: IMMIGRATION_LAWYER_PROMPT },
       ...(recentMessages?.reverse().map(msg => ({
-        role: msg.role,
+        role: msg.role as 'user' | 'assistant',
         content: msg.content
       })) || []),
       { role: 'user', content: message }
