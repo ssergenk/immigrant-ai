@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
-import pdfParse from 'pdf-parse'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -33,6 +32,19 @@ RESPONSE FORMAT:
 [Immigration lawyer guidance based on the actual form content you reviewed]
 
 CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
+
+// Dynamically import pdf-parse only when needed to avoid build issues
+async function parsePDF(buffer: Buffer): Promise<string> {
+  try {
+    // Only import pdf-parse when actually needed
+    const pdfParse = (await import('pdf-parse')).default
+    const pdfData = await pdfParse(buffer)
+    return pdfData.text
+  } catch (error) {
+    console.error('PDF parsing failed:', error)
+    return ''
+  }
+}
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
@@ -138,16 +150,14 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file - USING REAL PDF PARSER...')
+        console.log('📄 Processing PDF file - USING CONDITIONAL PDF PARSER...')
         
         try {
-          // Use real PDF parser that handles structure properly
-          console.log('🔍 Parsing PDF with pdf-parse...')
-          const pdfData = await pdfParse(buffer)
-          const rawPdfText = pdfData.text
+          // Use conditional PDF parser that avoids build issues
+          console.log('🔍 Parsing PDF with dynamic import...')
+          const rawPdfText = await parsePDF(buffer)
           
           console.log(`📄 Raw extracted: ${rawPdfText.length} characters`)
-          console.log(`📄 PDF info: ${pdfData.numpages} pages`)
           
           // Clean and limit text for token management
           const cleanText = rawPdfText.trim().replace(/\s+/g, ' ')
