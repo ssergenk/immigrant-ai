@@ -156,8 +156,8 @@ export default function UpgradeModal({ isOpen, onClose, messagesUsed, maxMessage
               <Shield className="w-5 h-5 text-green-400 mt-1 flex-shrink-0" />
               <div>
                 <div className="text-white text-sm mb-1">
-                  "ImmigrantAI helped me understand my green card process better than any website. 
-                  Worth every penny!"
+                  &ldquo;ImmigrantAI helped me understand my green card process better than any website. 
+                  Worth every penny!&rdquo;
                 </div>
                 <div className="text-gray-400 text-xs">- Maria S., Premium User</div>
               </div>

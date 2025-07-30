@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import GoogleLogin from '@/components/auth/GoogleLogin'
-import { MessageCircle, Shield, Clock, Globe, FileText, Users, CheckCircle, Star, ArrowRight, Play } from 'lucide-react'
+import { MessageCircle, Shield, Clock, Globe, FileText, CheckCircle, Star, Play } from 'lucide-react'
 
 export default function Home() {
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
@@ -52,7 +52,7 @@ export default function Home() {
     }, 5000)
 
     return () => clearInterval(timer)
-  }, [])
+  }, [chatConversation.length])
 
   return (
     <main className="min-h-screen bg-gray-900 text-white overflow-hidden">
@@ -116,7 +116,7 @@ export default function Home() {
                 <div className="flex items-center justify-center lg:justify-start gap-6 text-sm text-gray-400 animate-fade-in delay-600">
                   <div className="flex items-center gap-1">
                     <Shield className="w-4 h-4 text-green-400" />
-                    <span>Secure & Private</span>
+                    <span>Secure &amp; Private</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Clock className="w-4 h-4 text-blue-400" />
@@ -232,21 +232,21 @@ export default function Home() {
                 {
                   icon: FileText,
                   color: "from-green-500 to-emerald-600",
-                  title: "Visa & Green Card Guidance",
+                  title: "Visa &amp; Green Card Guidance",
                   description: "Get step-by-step help with H-1B, family visas, adjustment of status, and more. Navigate complex processes with confidence.",
                   delay: "delay-0"
                 },
                 {
                   icon: CheckCircle,
                   color: "from-blue-500 to-cyan-600", 
-                  title: "Document Analysis & Review",
+                  title: "Document Analysis &amp; Review",
                   description: "Upload your forms and get detailed analysis. Avoid costly mistakes with I-485, I-130, N-400 applications.",
                   delay: "delay-100"
                 },
                 {
                   icon: Shield,
                   color: "from-purple-500 to-pink-600",
-                  title: "Asylum & Citizenship Support", 
+                  title: "Asylum &amp; Citizenship Support", 
                   description: "Understand your rights, prepare for interviews, and get guidance on naturalization, asylum, and refugee processes.",
                   delay: "delay-200"
                 },
@@ -303,7 +303,7 @@ export default function Home() {
                   case: "Asylum Application",
                   image: "🇸🇾",
                   rating: 5,
-                  text: "As a refugee, I was terrified of making mistakes. The AI helped me prepare for my asylum interview and explained my rights in Arabic. I got approved and now I'm helping my family apply too.",
+                  text: "As a refugee, I was terrified of making mistakes. The AI helped me prepare for my asylum interview and explained my rights in Arabic. I got approved and now I&apos;m helping my family apply too.",
                   delay: "delay-200"
                 },
                 {
@@ -324,7 +324,7 @@ export default function Home() {
                   </div>
                   
                   <blockquote className="text-gray-300 mb-6 leading-relaxed">
-                    "{testimonial.text}"
+                    &ldquo;{testimonial.text}&rdquo;
                   </blockquote>
                   
                   <div className="flex items-center gap-4">
@@ -349,7 +349,7 @@ export default function Home() {
                 Your Immigration Success Starts Here
               </h2>
               <p className="text-xl md:text-2xl text-gray-300 mb-8 animate-slide-up delay-200">
-                Join 5,000+ immigrants who've successfully navigated their cases with ImmigrantAI
+                Join 5,000+ immigrants who&apos;ve successfully navigated their cases with ImmigrantAI
               </p>
               
               <div className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto mb-8 animate-slide-up delay-400">
@@ -365,7 +365,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-1">
                   <Shield className="w-4 h-4 text-blue-400" />
-                  <span>Your data is secure & private</span>
+                  <span>Your data is secure &amp; private</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-400 fill-current" />

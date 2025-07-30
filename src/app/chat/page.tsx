@@ -225,9 +225,9 @@ function ChatContent() {
         setTimeout(() => setShowUpgradeModal(true), 2000)
       }
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error sending message:', error)
-      setError(error.message || 'Failed to send message. Please try again.')
+      setError((error as Error).message || 'Failed to send message. Please try again.')
     } finally {
       setIsTyping(false)
     }
@@ -276,15 +276,15 @@ function ChatContent() {
 
       setShowFileUpload(false) // Hide upload area after successful upload
 
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error uploading file:', error)
       // Replace the "analyzing" message with error message
       setMessages(prev => prev.map(msg => 
         msg.id === uploadMessage.id 
-          ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${error.message || 'Please try again.'}`, id: Date.now().toString() }
+          ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${(error as Error).message || 'Please try again.'}`, id: Date.now().toString() }
           : msg
       ))
-      setError(error.message || 'Failed to analyze document. Please try again.')
+      setError((error as Error).message || 'Failed to analyze document. Please try again.')
     } finally {
       setIsUploading(false)
     }

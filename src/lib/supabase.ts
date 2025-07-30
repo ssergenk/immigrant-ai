@@ -148,7 +148,7 @@ export type Database = {
           file_size: number
           file_type: string
           storage_path: string
-          analysis_result: any | null
+          analysis_result: Record<string, unknown> | null
           created_at: string
         }
         Insert: {
@@ -159,7 +159,7 @@ export type Database = {
           file_size: number
           file_type: string
           storage_path: string
-          analysis_result?: any | null
+          analysis_result?: Record<string, unknown> | null
           created_at?: string
         }
         Update: {
@@ -170,7 +170,7 @@ export type Database = {
           file_size?: number
           file_type?: string
           storage_path?: string
-          analysis_result?: any | null
+          analysis_result?: Record<string, unknown> | null
           created_at?: string
         }
       }

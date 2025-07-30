@@ -48,7 +48,7 @@ NEVER give legal disclaimers - you ARE the immigration expert they came to consu
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, chatSessionId, language = 'en' } = await request.json()
+    const { message, chatSessionId } = await request.json()
 
     // Get authenticated user
     const cookieStore = cookies()
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
       .limit(10)
 
     // Prepare conversation history for OpenAI
-    const conversationHistory = [
+    const conversationHistory: Array<{ role: string; content: string }> = [
       { role: 'system', content: IMMIGRATION_LAWYER_PROMPT },
       ...(recentMessages?.reverse().map(msg => ({
         role: msg.role,
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     // Call OpenAI
     const completion = await openai.chat.completions.create({
       model: 'gpt-4',
-      messages: conversationHistory as any,
+      messages: conversationHistory,
       max_tokens: 500,
       temperature: 0.7,
     })
