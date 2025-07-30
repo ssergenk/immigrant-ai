@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link' // Import the Link component
 import { Upload, File, X, AlertCircle, Send } from 'lucide-react'
 
 interface FileUploadProps {
@@ -55,7 +56,7 @@ export default function FileUpload({ onFileUpload, isUploading, disabled }: File
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (disabled) return
-    
+
     const files = e.target.files
     if (files && files[0]) {
       handleFileSelect(files[0])
@@ -81,15 +82,13 @@ export default function FileUpload({ onFileUpload, isUploading, disabled }: File
           <span className="font-semibold">Document Analysis - Premium Feature</span>
         </div>
         <p className="text-gray-400 text-sm mb-3">
-          Upload and analyze your immigration documents like I-485, N-400, I-130, and RFE responses. 
+          Upload and analyze your immigration documents like I-485, N-400, I-130, and RFE responses.
           Get detailed feedback and guidance from your AI immigration lawyer.
         </p>
-        <button
-          onClick={() => {/* This will trigger upgrade modal */}}
-          className="text-blue-400 hover:text-blue-300 transition-colors text-sm underline"
-        >
+        {/* MODIFIED: Changed button to Link component */}
+        <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 transition-colors text-sm underline cursor-pointer">
           Upgrade to Premium to unlock document analysis
-        </button>
+        </Link>
       </div>
     )
   }
@@ -155,7 +154,7 @@ export default function FileUpload({ onFileUpload, isUploading, disabled }: File
               <X className="w-5 h-5" />
             </button>
           </div>
-          
+
           <div className="flex gap-2">
             <button
               onClick={handleUpload}
@@ -186,7 +185,7 @@ export default function FileUpload({ onFileUpload, isUploading, disabled }: File
       )}
 
       <div className="mt-3 text-xs text-gray-500">
-        <p>💡 <strong>Tip:</strong> Upload forms like I-485 (Green Card Application), N-400 (Citizenship), 
+        <p>💡 <strong>Tip:</strong> Upload forms like I-485 (Green Card Application), N-400 (Citizenship),
         I-130 (Family Petition), or RFE responses for detailed analysis and guidance.</p>
       </div>
     </div>
