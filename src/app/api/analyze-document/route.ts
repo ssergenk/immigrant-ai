@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const chatSessionId = formData.get('chatSessionId') as string
+    const chatSessionId = formData.get('chatSessionId') as string // Correct variable name here
 
     console.log('📁 File received:', file?.name, 'Size:', file?.size, 'Type:', file?.type)
 
@@ -119,8 +119,8 @@ export async function POST(request: NextRequest) {
           out_dir: tempDir,
           out_prefix: path.basename(file.name, path.extname(file.name)),
           page: null, // Convert all pages
-          popplerPath: '/usr/bin', // ADDED THIS LINE
-          convert_to_pdf: false // ADDED THIS LINE
+          popplerPath: '/usr/bin', // Specify Poppler binary path for Vercel
+          convert_to_pdf: false // Ensure images are generated, not PDF
         })
         console.log(`PDF converted to images. Output paths: ${outputImages}`)
 
@@ -212,7 +212,7 @@ What specific parts of your immigration form are you struggling with, or what qu
 
       // Insert AI message into chat
       await supabase.from('messages').insert({
-        chat_session_id: chatSession_id,
+        chat_session_id: chatSessionId, // Corrected typo here
         user_id: user.id,
         content: analysisResult,
         role: 'assistant',
