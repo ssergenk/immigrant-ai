@@ -5,7 +5,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import path from 'path' // For path manipulation
 import fs from 'fs/promises' // For file system operations
-import { convert } from 'pdf2pic' // Import convert function from pdf2pic
+import { Pdf2pic } from 'pdf2pic' // Corrected import: Import Pdf2pic class
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -120,20 +120,29 @@ export async function POST(request: NextRequest) {
           height: 1600            // Output height (adjust as needed, keeping aspect ratio for best results)
         };
 
-        const convertedImages = await convert(pdfPath, options);
-        console.log(`PDF converted to images. Output: ${JSON.stringify(convertedImages)}`);
+        const converter = new Pdf2pic(options); // Instantiate the Pdf2pic class
 
-        // pdf2pic returns an array of objects for each page
-        for (const page of convertedImages) {
-            if (page.base64) {
+        // Convert PDF to base64 images
+        const convertedImages = [];
+        const numberOfPages = await converter.get<ctrl62>
+        for (let i = 1; i <= numberOfPages; i++) {
+            const base64 = await converter.convertPage(i, { base64: true }); // Get base64 for each page
+            convertedImages.push(base64);
+        }
+        
+        console.log(`PDF converted to images. Number of pages converted: ${convertedImages.length}`);
+
+        // Add each generated image to visionMessagesContent
+        for (const pageData of convertedImages) {
+            if (pageData.base64) {
                 visionMessagesContent.push({
                     type: 'image_url',
                     image_url: {
-                        url: `data:image/jpeg;base64,${page.base64}`,
+                        url: `data:image/jpeg;base64,${pageData.base64}`,
                         detail: 'high'
                     }
                 });
-                console.log(`Added image for page ${page.page} to Vision API content.`)
+                console.log(`Added image for page to Vision API content.`)
             }
         }
 
