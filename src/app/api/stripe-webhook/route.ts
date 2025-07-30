@@ -121,14 +121,22 @@ export async function POST(request: NextRequest) {
           console.log('✅ Subscription status updated to:', newStatus)
         }
 
-        // Update subscription record
+        // Update subscription record with null safety
+        const updateData: any = {
+          status: subscription.status
+        }
+
+        if (subscription.current_period_start) {
+          updateData.current_period_start = new Date(subscription.current_period_start * 1000).toISOString()
+        }
+
+        if (subscription.current_period_end) {
+          updateData.current_period_end = new Date(subscription.current_period_end * 1000).toISOString()
+        }
+
         await supabase
           .from('subscriptions')
-          .update({
-            status: subscription.status,
-            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString()
-          })
+          .update(updateData)
           .eq('stripe_subscription_id', subscription.id)
 
         break
