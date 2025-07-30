@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    +    }
+    }
 
     // Check if user has premium subscription
     const { data: userData, error: userError } = await supabase
