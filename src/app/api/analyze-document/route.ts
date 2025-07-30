@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
             const textContent = await page.getTextContent()
             
             const pageText = textContent.items
-              .map((item: any) => item.str)
+              .map((item: { str: string }) => item.str)
               .join(' ')
             
             fullText += `\n--- Page ${pageNum} ---\n${pageText}`
