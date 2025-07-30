@@ -1,45 +1,15 @@
 {
-  "installCommand": "npm install --immutable",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": "nextjs",
   "builds": [
     {
       "src": "src/app/api/analyze-document/route.ts",
       "use": "@vercel/node",
       "config": {
-        "includeFiles": [
-          "node_modules/pdf2pic/**",
-          "node_modules/gm/**"
-        ]
+        "includeFiles": ["./node_modules/gm/**"],
+        "maxDuration": 60
       }
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
     }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "X-Requested-With, Content-Type, Authorization"
-        }
-      ]
-    }
-  ],
-  "functions": {
-    "src/app/api/analyze-document/route.ts": {
-      "runtime": "nodejs18.x",
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  }
+  ]
 }
