@@ -1,10 +1,11 @@
-'use client'
+// src/app/chat/page.tsx
+'use client' // Keep this at the top
 
 import { useState, useEffect, useRef } from 'react'
 import { createSupabaseClient } from '@/lib/supabase'
 import { User } from '@supabase/supabase-js'
 import UpgradeModal from '@/components/ui/UpgradeModal'
-import FileUpload from '@/components/chat/FileUpload'
+import FileUpload from '@/components/chat/FileUpload' // Make sure this path is correct
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher'
 import { LanguageProvider, useLanguage } from '@/contexts/LanguageContext'
 import { Crown, MessageCircle, Upload, RotateCcw } from 'lucide-react'
@@ -31,14 +32,14 @@ function ChatContent() {
   const [chatSessionId, setChatSessionId] = useState<string>('')
   const [userData, setUserData] = useState<UserData | null>(null)
   const [error, setError] = useState<string>('')
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false) // This state controls the modal
   const [isUploading, setIsUploading] = useState(false)
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [isClearingChat, setIsClearingChat] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileUploadRef = useRef<HTMLDivElement>(null)
   const supabase = createSupabaseClient()
-  
+
   // Language support
   const { currentLanguage, setLanguage } = useLanguage()
 
@@ -69,7 +70,7 @@ function ChatContent() {
     const initializeChat = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
-      
+
       if (!user) {
         window.location.href = '/'
         return
@@ -105,7 +106,7 @@ function ChatContent() {
           .insert({ user_id: user.id, title: 'Immigration Consultation' })
           .select('id')
           .single()
-        
+
         sessionId = newSession?.id || ''
       }
 
@@ -134,14 +135,14 @@ function ChatContent() {
     if (!user || !chatSessionId) return
 
     setIsClearingChat(true)
-    
+
     try {
       // Create a new chat session
       const { data: newSession } = await supabase
         .from('chat_sessions')
-        .insert({ 
-          user_id: user.id, 
-          title: `Immigration Consultation - ${new Date().toLocaleDateString()}` 
+        .insert({
+          user_id: user.id,
+          title: `Immigration Consultation - ${new Date().toLocaleDateString()}`
         })
         .select('id')
         .single()
@@ -165,7 +166,7 @@ function ChatContent() {
 
     // Check message limits
     if (userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages) {
-      setShowUpgradeModal(true)
+      setShowUpgradeModal(true) // Open upgrade modal if limit reached
       return
     }
 
@@ -198,7 +199,7 @@ function ChatContent() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          setShowUpgradeModal(true)
+          setShowUpgradeModal(true) // Open upgrade modal on 403 (forbidden)
           return
         }
         throw new Error(data.error || 'Failed to get AI response')
@@ -261,15 +262,15 @@ function ChatContent() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          setShowUpgradeModal(true)
+          setShowUpgradeModal(true) // Open upgrade modal on 403 (forbidden)
           return
         }
         throw new Error(data.error || 'Failed to analyze document')
       }
 
       // Replace the "analyzing" message with the actual analysis
-      setMessages(prev => prev.map(msg => 
-        msg.id === uploadMessage.id 
+      setMessages(prev => prev.map(msg =>
+        msg.id === uploadMessage.id
           ? { ...msg, content: data.analysis, id: Date.now().toString() }
           : msg
       ))
@@ -279,8 +280,8 @@ function ChatContent() {
     } catch (error) {
       console.error('Error uploading file:', error)
       // Replace the "analyzing" message with error message
-      setMessages(prev => prev.map(msg => 
-        msg.id === uploadMessage.id 
+      setMessages(prev => prev.map(msg =>
+        msg.id === uploadMessage.id
           ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${(error as Error).message || 'Please try again.'}`, id: Date.now().toString() }
           : msg
       ))
@@ -335,7 +336,7 @@ function ChatContent() {
           </div>
           <div className="flex items-center gap-4">
             {/* Language Switcher */}
-            <LanguageSwitcher 
+            <LanguageSwitcher
               currentLanguage={currentLanguage}
               onLanguageChange={setLanguage}
             />
@@ -376,7 +377,7 @@ function ChatContent() {
                     <span>Upgrade</span>
                   </button>
                 )}
-                
+
                 <div className="text-sm text-gray-300 flex items-center gap-1">
                   <MessageCircle className="w-4 h-4" />
                   {userData.subscription_status === 'free' ? (
@@ -448,7 +449,7 @@ function ChatContent() {
                 Welcome to your Virtual Immigration Lawyer
               </h2>
               <p className="text-gray-400 max-w-md mx-auto">
-                I am here to help you navigate US immigration processes. Ask me anything about visas, 
+                I am here to help you navigate US immigration processes. Ask me anything about visas,
                 green cards, citizenship, or any immigration concerns you have.
               </p>
               {isPremium && (
@@ -506,7 +507,7 @@ function ChatContent() {
               </div>
             </div>
           )}
-          
+
           {/* Invisible div to scroll to */}
           <div ref={messagesEndRef} />
         </div>
@@ -518,6 +519,7 @@ function ChatContent() {
               onFileUpload={handleFileUpload}
               isUploading={isUploading}
               disabled={!isPremium}
+              onUpgradeClick={() => setShowUpgradeModal(true)} // Pass the function here!
             />
           </div>
         )}
@@ -542,7 +544,7 @@ function ChatContent() {
               {isAtLimit ? 'Upgrade' : 'Send'}
             </button>
           </div>
-          
+
           {/* Upload Button Row */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -550,8 +552,8 @@ function ChatContent() {
                 onClick={() => setShowFileUpload(!showFileUpload)}
                 disabled={isUploading}
                 className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors ${
-                  isPremium 
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                  isPremium
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
                     : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                 }`}
               >
@@ -568,20 +570,20 @@ function ChatContent() {
                   </>
                 )}
               </button>
-              
+
               {!isPremium && (
                 <button
-                  onClick={() => setShowUpgradeModal(true)}
+                  onClick={() => setShowUpgradeModal(true)} // Changed this to open the modal directly
                   className="text-yellow-400 hover:text-yellow-300 text-xs underline"
                 >
                   Premium Feature
                 </button>
               )}
             </div>
-            
+
             <div className="text-xs text-gray-500">
-              {isAtLimit ? 
-                'Upgrade to premium for unlimited messaging' : 
+              {isAtLimit ?
+                'Upgrade to premium for unlimited messaging' :
                 'Press Enter to send, Shift+Enter for new line'
               }
             </div>

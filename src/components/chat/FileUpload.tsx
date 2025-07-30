@@ -1,16 +1,18 @@
+// src/components/chat/FileUpload.tsx
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link' // Import the Link component
+// No need for 'next/link' anymore as we'll use a button to trigger the modal directly
 import { Upload, File, X, AlertCircle, Send } from 'lucide-react'
 
 interface FileUploadProps {
   onFileUpload: (file: File) => void
   isUploading: boolean
   disabled?: boolean
+  onUpgradeClick: () => void; // New prop for triggering the upgrade modal
 }
 
-export default function FileUpload({ onFileUpload, isUploading, disabled }: FileUploadProps) {
+export default function FileUpload({ onFileUpload, isUploading, disabled, onUpgradeClick }: FileUploadProps) {
   const [dragActive, setDragActive] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
@@ -85,10 +87,13 @@ export default function FileUpload({ onFileUpload, isUploading, disabled }: File
           Upload and analyze your immigration documents like I-485, N-400, I-130, and RFE responses.
           Get detailed feedback and guidance from your AI immigration lawyer.
         </p>
-        {/* MODIFIED: Changed button to Link component */}
-        <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 transition-colors text-sm underline cursor-pointer">
+        {/* MODIFIED: Changed Link back to button and call onUpgradeClick */}
+        <button
+          onClick={onUpgradeClick} // Call the passed function
+          className="text-blue-400 hover:text-blue-300 transition-colors text-sm underline cursor-pointer"
+        >
           Upgrade to Premium to unlock document analysis
-        </Link>
+        </button>
       </div>
     )
   }
