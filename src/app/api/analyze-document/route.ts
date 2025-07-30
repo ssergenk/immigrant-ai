@@ -5,7 +5,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import path from 'path' // For path manipulation
 import fs from 'fs/promises' // For file system operations
-import PdfPoppler from 'pdf-poppler' // Corrected import: Import as a default export
+import { convert } from 'pdf2pic' // Import convert function from pdf2pic
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const chatSessionId = formData.get('chatSessionId') as string // Correct variable name here
+    const chatSessionId = formData.get('chatSessionId') as string
 
     console.log('📁 File received:', file?.name, 'Size:', file?.size, 'Type:', file?.type)
 
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
     console.log('✅ Premium user verified, analyzing document...')
 
     let analysisResult: string
-    const fileName = file.name.toLowerCase()
-    const fileSize = (file.size / 1024 / 1024).toFixed(2)
+    const fileName = file.name.toLowerCase() // Keep these for potential future use or debugging
+    const fileSize = (file.size / 1024 / 1024).toFixed(2) // Keep these for potential future use or debugging
 
     // Array to hold message content for Vision API (text + image_urls)
     const visionMessagesContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         });
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file by converting to images for AI Vision...')
+        console.log('📄 Processing PDF file by converting to images for AI Vision using pdf2pic...')
 
         // Ensure temporary directory exists
         await fs.mkdir(tempDir, { recursive: true })
@@ -111,47 +111,34 @@ export async function POST(request: NextRequest) {
         await fs.writeFile(pdfPath, pdfBuffer)
         console.log(`Saved PDF to temporary path: ${pdfPath}`)
 
-        // Correct instantiation of PdfPoppler
-        const poppler = new PdfPoppler(pdfPath)
+        const options = {
+          density: 150,           // Image quality
+          saveFilename: path.basename(file.name, path.extname(file.name)),
+          savePath: tempDir,
+          format: "jpeg",         // Output format
+          width: 1200,            // Output width
+          height: 1600            // Output height (adjust as needed, keeping aspect ratio for best results)
+        };
 
-        const outputImages = await poppler.convert({
-          format: 'jpeg', // Or 'png'
-          out_dir: tempDir,
-          out_prefix: path.basename(file.name, path.extname(file.name)),
-          page: null, // Convert all pages
-          popplerPath: '/usr/bin', // Specify Poppler binary path for Vercel
-          convert_to_pdf: false // Ensure images are generated, not PDF
-        })
-        console.log(`PDF converted to images. Output paths: ${outputImages}`)
+        const convertedImages = await convert(pdfPath, options);
+        console.log(`PDF converted to images. Output: ${JSON.stringify(convertedImages)}`);
 
-        // Read each generated image and add to visionMessagesContent
-        const imageFiles = await fs.readdir(tempDir);
-        const sortedImageFiles = imageFiles
-            .filter(name => name.startsWith(path.basename(file.name, path.extname(file.name))) && (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')))
-            .sort((a, b) => {
-                const numA = parseInt(a.match(/-\d+\.(jpg|jpeg|png)$/)?.[0].slice(1, -4) || '0');
-                const numB = parseInt(b.match(/-\d+\.(jpg|jpeg|png)$/)?.[0].slice(1, -4) || '0');
-                return numA - numB;
-            });
-
-
-        for (const imageName of sortedImageFiles) {
-          const imagePath = path.join(tempDir, imageName);
-          const imageBuffer = await fs.readFile(imagePath);
-          const imageBase64 = imageBuffer.toString('base64');
-          
-          visionMessagesContent.push({
-            type: 'image_url',
-            image_url: {
-              url: `data:image/jpeg;base64,${imageBase64}`, // Assuming jpeg for output, adjust if format changes
-              detail: 'high'
+        // pdf2pic returns an array of objects for each page
+        for (const page of convertedImages) {
+            if (page.base64) {
+                visionMessagesContent.push({
+                    type: 'image_url',
+                    image_url: {
+                        url: `data:image/jpeg;base64,${page.base64}`,
+                        detail: 'high'
+                    }
+                });
+                console.log(`Added image for page ${page.page} to Vision API content.`)
             }
-          });
-          console.log(`Added image ${imageName} to Vision API content.`)
         }
 
         if (visionMessagesContent.length === 1) { // Only the initial text message, no images added
-             throw new Error("No images were generated from the PDF. Ensure PDF is valid and poppler-utils is configured.");
+             throw new Error("No images were generated from the PDF. Ensure PDF is valid and GraphicsMagick/ImageMagick are configured if needed.");
         }
 
       } else {
@@ -212,7 +199,7 @@ What specific parts of your immigration form are you struggling with, or what qu
 
       // Insert AI message into chat
       await supabase.from('messages').insert({
-        chat_session_id: chatSessionId, // Corrected typo here
+        chat_session_id: chatSessionId,
         user_id: user.id,
         content: analysisResult,
         role: 'assistant',
