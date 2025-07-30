@@ -4,17 +4,14 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 
 // Define the type for the data you're updating in the 'subscriptions' table
-// Adjust these types if your 'subscriptions' table schema is different.
-// For example, if 'status' has a specific enum, you'd use that instead of string.
 type SubscriptionUpdate = {
   status: string;
   current_period_start?: string; // Optional, as it's conditionally added
   current_period_end?: string;   // Optional, as it's conditionally added
-  // Add any other fields you might update on the 'subscriptions' table here
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-06-30.basil',
+  apiVersion: '2025-06-30.basil', // Ensure this API version is recent enough to reflect the change
 });
 
 export async function POST(request: NextRequest) {
@@ -45,9 +42,6 @@ export async function POST(request: NextRequest) {
 
   // Create Supabase client
   const cookieStore = cookies();
-  // If you have a generated Supabase `Database` type (e.g., from `supabase gen types typescript --local > src/types/supabase.ts`),
-  // you might want to type this for better safety:
-  // const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore });
   const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
 
   try {
@@ -135,17 +129,24 @@ export async function POST(request: NextRequest) {
         }
 
         // Update subscription record with null safety
-        // The type for updateData is now explicitly SubscriptionUpdate
         const updateData: SubscriptionUpdate = {
           status: subscription.status
         };
 
-        if (subscription.current_period_start) {
-          updateData.current_period_start = new Date(subscription.current_period_start * 1000).toISOString();
-        }
+        // Access current_period_start and current_period_end from the first subscription item
+        // Ensure that subscription.items.data exists and has at least one item
+        if (subscription.items && subscription.items.data && subscription.items.data.length > 0) {
+          const firstSubscriptionItem = subscription.items.data[0];
 
-        if (subscription.current_period_end) {
-          updateData.current_period_end = new Date(subscription.current_period_end * 1000).toISOString();
+          if (firstSubscriptionItem.current_period_start) {
+            updateData.current_period_start = new Date(firstSubscriptionItem.current_period_start * 1000).toISOString();
+          }
+
+          if (firstSubscriptionItem.current_period_end) {
+            updateData.current_period_end = new Date(firstSubscriptionItem.current_period_end * 1000).toISOString();
+          }
+        } else {
+            console.warn('⚠️ No subscription items found for updated subscription:', subscription.id);
         }
 
         await supabase
