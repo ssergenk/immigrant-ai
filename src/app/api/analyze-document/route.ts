@@ -33,26 +33,6 @@ RESPONSE FORMAT:
 
 CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
 
-// Simple PDF text extraction function using a different approach
-async function extractPDFText(buffer: Buffer): Promise<string> {
-  try {
-    // Try to extract text using a simple approach that works in serverless
-    const text = buffer.toString('utf8')
-    
-    // Look for readable text patterns in the PDF
-    const textMatches = text.match(/[A-Za-z0-9\s\.,!?;:"'-]{10,}/g)
-    
-    if (textMatches && textMatches.length > 0) {
-      return textMatches.join(' ').slice(0, 5000) // Limit to 5000 chars
-    }
-    
-    return ''
-  } catch (error) {
-    console.error('PDF text extraction error:', error)
-    return ''
-  }
-}
-
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
   
@@ -157,83 +137,71 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file - EXTRACTING ACTUAL CONTENT...')
+        console.log('📄 Processing PDF file - Using GPT-4 Vision for PDF analysis...')
         
         try {
-          // Extract text from PDF
-          const pdfText = await extractPDFText(buffer)
-          
-          console.log(`📄 Extracted ${pdfText.length} characters from PDF`)
-          console.log(`📄 First 200 chars: ${pdfText.substring(0, 200)}`)
+          // Convert PDF buffer to base64 for GPT-4 Vision
+          // This is a workaround since GPT-4 Vision can handle PDF files directly
+          const fileBase64 = buffer.toString('base64')
 
-          if (pdfText.trim().length < 50) {
-            analysisResult = `**📋 PDF Content Issue**
-            
-I was able to open your PDF "${file.name}" but found very little readable text (${pdfText.length} characters). This usually means:
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4-vision-preview',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `Please analyze this immigration PDF document "${file.name}". Read the actual content of the PDF, identify what form this is, what sections are completed, what's missing, and give specific actionable advice as Sarah Chen, immigration attorney. Look at the actual filled fields and content, not just the filename.`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:${file.type};base64,${fileBase64}`,
+                      detail: 'high'
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 1500,
+            temperature: 0.3
+          })
 
-**🔍 Possible Issues:**
-- The PDF is mostly images/scanned content
-- It's a blank form that hasn't been filled out
-- The PDF has technical formatting issues
-- It's a secured/protected PDF
-
-**💡 Solutions:**
-1. **Upload as images** - Take screenshots of each page as JPG/PNG files
-2. **Use fillable PDF** - Make sure you're using the official USCIS fillable version
-3. **Fill out the form first** - If it's blank, complete it before uploading
-4. **Try a different PDF** - Download a fresh copy from USCIS.gov
-
-**🆘 I Can Still Help!**
-Tell me what specific USCIS form you're working with and what questions you have about filling it out. I can provide detailed guidance even without reading the file content.
-
-What form are you working on and what specific help do you need?`
-
-          } else {
-            // Analyze the extracted PDF content with AI
-            const response = await openai.chat.completions.create({
-              model: 'gpt-4',
-              messages: [
-                {
-                  role: 'system',
-                  content: DOCUMENT_ANALYSIS_PROMPT
-                },
-                {
-                  role: 'user',
-                  content: `Here's the extracted content of the uploaded PDF "${file.name}":
-
-${pdfText}
-
-Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
-                }
-              ],
-              max_tokens: 1500,
-              temperature: 0.3
-            })
-
-            analysisResult = response.choices[0].message.content || 'Unable to analyze extracted content'
-            console.log('✅ PDF content analysis completed successfully')
-          }
+          analysisResult = response.choices[0].message.content || 'Unable to analyze PDF document'
+          console.log('✅ PDF analysis completed with GPT-4 Vision')
 
         } catch (pdfError) {
           console.error('📄 PDF processing error:', pdfError)
-          analysisResult = `**📋 PDF Reading Error**
           
-I encountered an issue reading your PDF file "${file.name}". This can happen with certain PDF formats, encrypted files, or technical issues.
+          // Fallback: Ask user to convert to images
+          analysisResult = `**📋 PDF Analysis Issue**
+          
+I encountered a technical issue reading your PDF file "${file.name}". This can happen with certain PDF formats or complex documents.
 
-**💡 Solutions:**
-1. **Try uploading as images** - Convert each page to JPG/PNG format
-2. **Download fresh copy** - Get a new copy from USCIS.gov
-3. **Check file integrity** - Make sure the PDF opens correctly on your computer
-4. **Remove password protection** - If the PDF is password-protected
+**💡 Best Solution for Accurate Analysis:**
 
-**🔍 I'm Still Here to Help!**
-What specific USCIS form are you working with? I can provide detailed guidance about:
-- How to fill out each section
-- Required supporting documents
-- Common mistakes to avoid
-- Step-by-step completion instructions
+**🖼️ Convert PDF to Images (Recommended)**
+1. Open your PDF file on your computer  
+2. Take screenshots of each page (or use "Save as Image")
+3. Upload each page as JPG/PNG files
+4. I'll analyze each page with perfect accuracy using AI vision
 
-What form are you working on and what specific questions do you have?`
+**📋 Alternative: Tell Me About Your Form**
+If you can't convert to images, please tell me:
+- What type of immigration form is this? (I-485, I-130, N-400, etc.)
+- What sections are you having trouble with?
+- Any specific questions about filling it out?
+
+**🔍 Why Images Work Better:**
+Images give me perfect visual access to see exactly what's filled out, what's missing, signatures, dates, and formatting - just like reviewing the form in person.
+
+**💬 What Would You Prefer?**
+Would you like to upload the form as images, or tell me about the specific form and questions you have?`
         }
 
       } else {
