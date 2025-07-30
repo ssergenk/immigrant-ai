@@ -1,12 +1,9 @@
 'use client'
-
 import { useState, useEffect } from 'react'
 import { createSupabaseClient } from '@/lib/supabase'
-
 export default function DatabaseTest() {
   const [connectionStatus, setConnectionStatus] = useState<string>('Testing...')
   const [tableCount, setTableCount] = useState<number>(0)
-
   useEffect(() => {
     async function testConnection() {
       try {
@@ -16,7 +13,6 @@ export default function DatabaseTest() {
         const { data, error } = await supabase
           .from('users')
           .select('count', { count: 'exact', head: true })
-
         if (error) {
           setConnectionStatus(`❌ Connection Error: ${error.message}`)
         } else {
@@ -27,10 +23,8 @@ export default function DatabaseTest() {
         setConnectionStatus(`❌ Connection Failed: ${err}`)
       }
     }
-
     testConnection()
   }, [])
-
   return (
     <div className="bg-gray-800 p-6 rounded-lg border border-gray-700 max-w-md mx-auto mt-8">
       <h3 className="text-lg font-semibold text-white mb-4">Database Connection Test</h3>
@@ -41,8 +35,8 @@ export default function DatabaseTest() {
       </div>
       
       <div className="mt-4 text-sm text-gray-400">
-        <p>✅ If you see "Connected Successfully", your database is working!</p>
-        <p>❌ If you see an error, we'll need to check your .env.local file</p>
+        <p>✅ If you see &ldquo;Connected Successfully&rdquo;, your database is working!</p>
+        <p>❌ If you see an error, we&apos;ll need to check your .env.local file</p>
       </div>
     </div>
   )

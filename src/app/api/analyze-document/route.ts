@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
 
     let analysisResult: string
     const fileName = file.name.toLowerCase()
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const fileSize = (file.size / 1024 / 1024).toFixed(2)
 
     try {
