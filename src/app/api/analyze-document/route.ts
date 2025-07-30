@@ -5,7 +5,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import path from 'path' // For path manipulation
 import fs from 'fs/promises' // For file system operations
-import { PdfPoppler } from 'pdf-poppler' // Import the library
+import PdfPoppler from 'pdf-poppler' // Corrected import: Import as a default export
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
@@ -111,6 +111,7 @@ export async function POST(request: NextRequest) {
         await fs.writeFile(pdfPath, pdfBuffer)
         console.log(`Saved PDF to temporary path: ${pdfPath}`)
 
+        // Correct instantiation of PdfPoppler
         const poppler = new PdfPoppler(pdfPath)
 
         const outputImages = await poppler.convert({
