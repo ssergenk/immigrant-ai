@@ -2,58 +2,40 @@ import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import * as pdfjsLib from 'pdfjs-dist'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
+
+// Set worker path for PDF.js
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
 
 // Immigration Lawyer Analysis Prompt
 const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 15+ years of experience. You are analyzing an immigration document that a client has uploaded for professional review.
 
 IMPORTANT: You CAN and MUST analyze immigration documents. This is your job as an immigration lawyer. Never say you cannot analyze documents.
 
-YOUR ANALYSIS APPROACH:
-1. **Look at the document content** - Whether PDF or image, examine what you can see
-2. **Identify the form type** - I-485, I-130, N-400, etc.
-3. **Review completeness** - What sections appear filled vs blank
-4. **Spot common issues** - Missing signatures, dates, required fields
-5. **Give specific advice** - Tell them exactly what to fix
+ANALYZE THE ACTUAL DOCUMENT CONTENT - not just the filename. Look at what fields are filled, what's missing, and provide specific actionable advice.
 
 RESPONSE FORMAT:
 
-**📋 Quick Summary**
-[Encouraging but specific: "I've reviewed your I-485 application. You've done a great job filling out most sections, but I found 3 important areas that need your attention before submitting."]
+**📋 Document Analysis**
+[Identify the specific form and what you found in the actual content]
 
-**✅ What You Did Well**
-- [Specific praise: "Your personal information section is complete and properly filled"]
-- [Another positive: "You correctly selected the adjustment category"]
+**✅ Completed Sections**
+[List specific sections/fields that are properly filled based on the actual text]
 
-**📄 Document Overview**
-[Explain: "This is Form I-485, Application to Adjust Status to Permanent Resident. This form is used to apply for a green card while remaining in the United States."]
+**⚠️ Issues Found**
+[Specific missing fields, incomplete sections, or errors you found in the actual document]
 
-**⚠️ Issues I Found That Need Fixing**
-- [Specific issue: "Part 3 about employment authorization - you need to decide if you want to apply for work authorization"]
-- [Another issue: "Missing signature and date at the end of the form"]
-- [More specific problems: "Section about previous immigration violations appears incomplete"]
+**📝 Required Actions**
+[Numbered list of specific steps to fix the issues you identified]
 
-**📝 Your Next Steps**
-1. [Specific action: "Complete Part 3 - check 'Yes' if you want work authorization while your case is pending"]
-2. [Another step: "Sign and date the form at the bottom of the last page"]
-3. [Third step: "Review Part 14 about immigration violations - answer all questions completely"]
+**💡 Professional Advice**
+[Immigration lawyer guidance based on the actual form content]
 
-**📋 Supporting Documents You'll Need**
-- Form I-693 (Medical Examination) from USCIS civil surgeon
-- Two passport-style photos taken within 30 days
-- Copy of birth certificate with English translation
-- Form I-864 Affidavit of Support (if family-based case)
-
-**💡 Important Notes**
-[Based on what you see: "Since you're applying based on marriage, make sure your spouse files the I-864 Affidavit of Support"]
-
-**💬 Questions for You**
-[One specific question: "I notice you left the travel document section blank - do you need to travel outside the US while your case is pending?"]
-
-CRITICAL: Never say you cannot analyze documents. You are an immigration lawyer - document review is your expertise. Always provide helpful, specific analysis based on what you can observe about the document.`
+CRITICAL: Base your analysis on the ACTUAL document text content, not assumptions from the filename.`
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
@@ -137,34 +119,98 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file...')
+        console.log('📄 Processing PDF file - EXTRACTING REAL CONTENT...')
         
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
-            },
-            {
-              role: 'user',
-              content: `I've uploaded a PDF immigration document named "${file.name}". Please provide detailed professional analysis as an immigration attorney. Based on the filename and your knowledge of USCIS forms, provide specific guidance about:
+        try {
+          // Read PDF with PDF.js
+          const arrayBuffer = await file.arrayBuffer()
+          const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+          
+          console.log(`📖 PDF loaded - ${pdfDoc.numPages} pages`)
+          
+          let fullText = ''
+          
+          // Extract text from all pages
+          for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+            const page = await pdfDoc.getPage(pageNum)
+            const textContent = await page.getTextContent()
+            
+            const pageText = textContent.items
+              .map((item: any) => item.str)
+              .join(' ')
+            
+            fullText += `\n--- Page ${pageNum} ---\n${pageText}`
+          }
+          
+          console.log(`📄 Extracted ${fullText.length} characters from PDF`)
+          console.log(`📄 First 500 chars: ${fullText.substring(0, 500)}`)
 
-1. What this form is used for
-2. Common sections that need completion  
-3. Required supporting documents
-4. Common mistakes to avoid
-5. Step-by-step completion guidance
+          if (fullText.trim().length < 50) {
+            analysisResult = `**📋 PDF Content Issue**
+            
+I was able to open your PDF "${file.name}" but found very little readable text (${fullText.length} characters). This usually means:
 
-Make this as specific and actionable as possible, as if you were reviewing this form in person.`
-            }
-          ],
-          max_tokens: 1500,
-          temperature: 0.3
-        })
+**🔍 Possible Issues:**
+- The PDF is mostly images/scanned content
+- It's a blank form that hasn't been filled out
+- The PDF has technical formatting issues
 
-        analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-        console.log('✅ PDF analysis completed')
+**💡 Solutions:**
+1. **Upload as images** - Take screenshots of each page as JPG/PNG files
+2. **Use fillable PDF** - Make sure you're using the official USCIS fillable version
+3. **Fill out the form first** - If it's blank, complete it before uploading
+
+**🆘 I Can Still Help!**
+Tell me what specific USCIS form you're working with and what questions you have about filling it out. I can provide detailed guidance even without reading the file.
+
+What form are you working on and what specific help do you need?`
+
+          } else {
+            // Analyze the extracted text with AI
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4',
+              messages: [
+                {
+                  role: 'system',
+                  content: DOCUMENT_ANALYSIS_PROMPT
+                },
+                {
+                  role: 'user',
+                  content: `Please analyze this immigration document "${file.name}". Here is the complete text content extracted from the PDF:
+
+${fullText}
+
+Provide detailed professional analysis as an immigration lawyer. Identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on the actual content.`
+                }
+              ],
+              max_tokens: 1500,
+              temperature: 0.3
+            })
+
+            analysisResult = response.choices[0].message.content || 'Unable to analyze document content'
+            console.log('✅ PDF content analysis completed successfully')
+          }
+
+        } catch (pdfError) {
+          console.error('📄 PDF processing error:', pdfError)
+          analysisResult = `**📋 PDF Reading Error**
+          
+I encountered an issue reading your PDF file "${file.name}". This can happen with certain PDF formats or corrupted files.
+
+**💡 Solutions:**
+1. **Try uploading as images** - Convert each page to JPG/PNG format
+2. **Download fresh copy** - Get a new copy from USCIS.gov
+3. **Check file integrity** - Make sure the PDF opens correctly on your computer
+
+**🔍 I'm Still Here to Help!**
+What specific USCIS form are you working with? I can provide detailed guidance about:
+- How to fill out each section
+- Required supporting documents
+- Common mistakes to avoid
+- Step-by-step completion instructions
+
+What form are you working on and what specific questions do you have?`
+        }
 
       } else {
         return NextResponse.json({ error: 'Please upload PDF or image files only.' }, { status: 400 })
@@ -172,22 +218,18 @@ Make this as specific and actionable as possible, as if you were reviewing this 
 
     } catch (aiError) {
       console.error('AI Analysis Error:', aiError)
-      analysisResult = `**📋 Analysis Issue**
-I encountered a technical issue, but I'm still here to help you with your immigration form!
+      analysisResult = `**📋 Analysis Technical Issue**
 
-**💡 Let's Get You The Help You Need**
-1. **Upload as images** (JPG/PNG) - This often works more reliably
-2. **Try again** - Sometimes the second attempt works better
-3. **Ask specific questions** - I can help with particular sections you're unsure about
+I encountered a technical problem analyzing your document, but I'm here to help you succeed with your immigration case!
 
-**🔍 How I Can Help Right Now**
-- Guide you through specific form sections
-- Explain what supporting documents you need
-- Answer questions about filling out particular fields
+**🔍 How I Can Help Right Now:**
+- Answer specific questions about USCIS forms
+- Guide you through form completion step-by-step
+- Explain required supporting documents
 - Help you understand the immigration process
 
-**💬 What Questions Do You Have?**
-What specific parts of your immigration form are you struggling with? I'm here to help guide you through it!`
+**💬 What Do You Need Help With?**
+What specific immigration form are you working on and what questions do you have? I can provide expert guidance even without the file analysis.`
     }
 
     // Save the analysis to database
