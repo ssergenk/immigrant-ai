@@ -22,7 +22,7 @@ RESPONSE FORMAT:
 **✅ Completed Sections**
 [List specific sections/fields that are properly filled based on the actual text content]
 
-**⚠️ Issues Found**
+*⚠️ Issues Found**
 [Specific missing fields, incomplete sections, or errors you found in the actual document content]
 
 **📝 Required Actions**
@@ -33,22 +33,45 @@ RESPONSE FORMAT:
 
 CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
 
-// Dynamically import pdf-parse only when needed to avoid build issues
+// Better PDF parsing function
 async function parsePDF(buffer: Buffer): Promise<string> {
   try {
-    // Only import pdf-parse when actually needed
+    // Try multiple PDF parsing approaches
     const pdfParse = (await import('pdf-parse')).default
-    const pdfData = await pdfParse(buffer)
+
+    // Parse with options for better text extraction
+    const pdfData = await pdfParse(buffer, {
+      // Normalize whitespace
+      normalizeWhitespace: false,
+      // Don't discard duplicates
+      disableCombineTextItems: false
+    })
+
+    console.log(`PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} chars`)
+
     return pdfData.text
   } catch (error) {
     console.error('PDF parsing failed:', error)
+
+    // Fallback: Try to extract text as UTF-8 string
+    try {
+      const textContent = buffer.toString('utf8')
+      // Extract readable text patterns
+      const matches = textContent.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{20,}/g)
+      if (matches) {
+        return matches.join(' ').slice(0, 10000)
+      }
+    } catch (fallbackError) {
+      console.error('Fallback extraction failed:', fallbackError)
+    }
+
     return ''
   }
 }
 
 export async function POST(request: NextRequest) {
   console.log('🔍 Document analysis API called')
-  
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -77,8 +100,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError || userData.subscription_status !== 'premium') {
-      return NextResponse.json({ 
-        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.' 
+      return NextResponse.json({
+        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.'
       }, { status: 403 })
     }
 
@@ -87,11 +110,11 @@ export async function POST(request: NextRequest) {
     // Convert file to buffer for storage and processing
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    
+
     // Upload file to Supabase storage
     const fileName = `${Date.now()}_${file.name}`
     const storagePath = `uploads/${user.id}/${fileName}`
-    
+
     console.log('📤 Uploading file to Supabase storage...')
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('documents')
@@ -114,7 +137,7 @@ export async function POST(request: NextRequest) {
     try {
       if (file.type.startsWith('image/')) {
         console.log('🖼️ Processing image with AI Vision...')
-        
+
         // For images, use OpenAI Vision API
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
@@ -151,24 +174,24 @@ export async function POST(request: NextRequest) {
 
       } else if (file.type === 'application/pdf') {
         console.log('📄 Processing PDF file - USING CONDITIONAL PDF PARSER...')
-        
+
         try {
           // Use conditional PDF parser that avoids build issues
           console.log('🔍 Parsing PDF with dynamic import...')
           const rawPdfText = await parsePDF(buffer)
-          
+
           console.log(`📄 Raw extracted: ${rawPdfText.length} characters`)
-          
+
           // Clean and limit text for token management
           const cleanText = rawPdfText.trim().replace(/\s+/g, ' ')
           const limitedText = cleanText.slice(0, 7000) // ~90% of 8K tokens for GPT-4
-          
+
           console.log(`📄 Final text: ${limitedText.length} characters (limited for tokens)`)
           console.log(`📄 First 300 chars: ${limitedText.substring(0, 300)}`)
 
           if (limitedText.trim().length < 100) {
             analysisResult = `**📋 PDF Content Issue**
-            
+
 I was able to open your PDF "${file.name}" but found very little readable text (${limitedText.length} characters). This usually means:
 
 **🔍 Possible Issues:**
@@ -217,16 +240,16 @@ Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL conte
 
         } catch (pdfError) {
           console.error('📄 PDF parsing error:', pdfError)
-          
+
           // Fallback: Recommend image upload
           analysisResult = `**📋 PDF Parsing Error**
-          
+
 I encountered an issue parsing your PDF file "${file.name}". This can happen with complex PDF formats, scanned documents, or encrypted files.
 
 **💡 Best Solution - Upload as Images:**
 
 **🖼️ Convert to Images (Most Reliable)**
-1. Open your PDF file on your computer  
+1. Open your PDF file on your computer
 2. Take screenshots of each page (or use "Save as Image")
 3. Upload each page as JPG/PNG files
 4. I'll analyze each page with perfect accuracy
@@ -292,14 +315,14 @@ What specific immigration form are you working on and what questions do you have
       console.log('❌ Database save error:', dbError)
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       analysis: analysisResult,
       success: true
     })
 
   } catch (error) {
     console.error('💥 Document Analysis Error:', error)
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: 'Sorry, I encountered an error analyzing your document. Please try again.',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
