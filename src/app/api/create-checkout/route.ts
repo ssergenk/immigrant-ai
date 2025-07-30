@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       customer_email: user.email || undefined,
       line_items: [
         {
-          price: process.env.STRIPE_PREMIUM_PRICE_ID!,
+          price: process.env.STRIPE_PREMIUM_PROD_ID!,
           quantity: 1,
         },
       ],
