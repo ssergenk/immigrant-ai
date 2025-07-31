@@ -348,58 +348,21 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file - trying image conversion...')
+        console.log('📄 Processing PDF file...')
 
-        // For protected/encrypted PDFs, convert to image and use vision
-        try {
-          console.log('🖼️ Converting PDF to image for vision analysis...')
-          
-          // Use pdf2pic to convert first page to image
-          const pdf2pic = await import('pdf2pic')
-          
-          const convertOptions = {
-            density: 200,           // High resolution
-            saveFilename: "page",
-            savePath: "/tmp/",
-            format: "png",
-            width: 2000,           // High width for clarity
-            height: 2600           // Standard form height
-          }
-          
-          const convert = pdf2pic.fromBuffer(buffer, convertOptions)
-          const result = await convert(1, { responseType: "buffer" })
-          
-          // Handle different response formats from pdf2pic
-          let imageBuffer: Buffer
-          
-          if (result && result.buffer) {
-            imageBuffer = result.buffer
-          } else if (result && Buffer.isBuffer(result)) {
-            imageBuffer = result
-          } else if (Array.isArray(result) && result[0] && result[0].buffer) {
-            imageBuffer = result[0].buffer
-          } else {
-            throw new Error('Invalid pdf2pic response format')
-          }
-          
-          console.log(`✅ PDF converted to image, buffer size: ${imageBuffer.length}`)
-          
-          // Validate the buffer is actually an image
-          if (imageBuffer.length < 1000) {
-            throw new Error('Image buffer too small, likely conversion failed')
-          }
-          
-          const imageBase64 = imageBuffer.toString('base64')
-          
-          // Validate base64 (should start with valid PNG header when decoded)
-          if (!imageBase64 || imageBase64.length < 100) {
-            throw new Error('Invalid base64 encoding')
-          }
-          
-          console.log('🖼️ Sending to GPT-4o vision...')
+        // Try text extraction first
+        const extractedText = await parsePDF(buffer)
+        console.log(`📄 Extracted text: ${extractedText.length} characters`)
+
+        // Check if we got meaningful content
+        const meaningfulText = extractedText.replace(/[^\w\s]/g, '').trim()
+        
+        if (meaningfulText.length > 200) {
+          // We have enough readable text, analyze it
+          console.log('📄 Analyzing extracted text content...')
           
           const response = await openai.chat.completions.create({
-            model: 'gpt-4o',
+            model: 'gpt-4',
             messages: [
               {
                 role: 'system',
@@ -407,19 +370,11 @@ export async function POST(request: NextRequest) {
               },
               {
                 role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `Analyze this immigration form PDF (converted to image) "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
-                  },
-                  {
-                    type: 'image_url',
-                    image_url: {
-                      url: `data:image/png;base64,${imageBase64}`,
-                      detail: 'high'
-                    }
-                  }
-                ]
+                content: `Here's what I extracted from "${file.name}":
+
+${extractedText.slice(0, 7000)}
+
+Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed.`
               }
             ],
             max_tokens: 1000,
@@ -427,49 +382,28 @@ export async function POST(request: NextRequest) {
           })
 
           analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-          console.log('✅ PDF->Image analysis completed successfully!')
+          console.log('✅ Text-based PDF analysis completed')
           
-        } catch (conversionError) {
-          console.log('PDF->Image conversion failed, trying text extraction...', conversionError)
+        } else {
+          // PDF is encrypted/protected - give clear guidance
+          console.log('📄 PDF appears encrypted/protected, providing guidance')
           
-          // Fallback to text extraction
-          const extractedText = await parsePDF(buffer)
-          console.log(`📄 Final extracted text: ${extractedText.length} characters`)
+          analysisResult = `Hey! Your PDF "${file.name}" is encrypted or protected (super common with USCIS forms).
 
-          if (extractedText.trim().length < 100) {
-            analysisResult = `Your PDF "${file.name}" appears to be encrypted or protected (common with USCIS forms).
+**Quick fix - works 100% of the time:**
 
-**Quick Fix:**
-1. **Take screenshots** of each page as JPG/PNG
-2. **Upload the images** - I can read them perfectly!
-3. Or tell me what form this is (I-130, I-485, etc.) and I'll guide you step by step
+1. **Open your PDF** on your computer
+2. **Take screenshots** of each page as JPG/PNG 
+3. **Upload the images** - I can read them perfectly!
 
-What immigration form are you working on?`
-          } else {
-            // Analyze extracted text
-            const response = await openai.chat.completions.create({
-              model: 'gpt-4',
-              messages: [
-                {
-                  role: 'system',
-                  content: DOCUMENT_ANALYSIS_PROMPT
-                },
-                {
-                  role: 'user',
-                  content: `Here's what I extracted from "${file.name}":
+**OR just tell me:**
+- What immigration form is this? (I-130, I-485, I-131, etc.)
+- What sections are you struggling with?
+- Any specific questions?
 
-${extractedText.slice(0, 7000)}
+I've been doing this for 30 years - I can guide you step by step even without seeing the form!
 
-Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed.`
-                }
-              ],
-              max_tokens: 1000,
-              temperature: 0.3
-            })
-
-            analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-            console.log('✅ Text-based PDF analysis completed')
-          }
+What form are you working on?`
         }
 
       } else {
