@@ -24,7 +24,7 @@ When analyzing forms:
 - Be encouraging but realistic
 
 When PDF is encrypted:
-"Your PDF file is protected by USCIS security. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
+"The PDF file you uploaded is encrypted by USCIS for security reasons and can't be reviewed directly. If you can take screenshots of the form as JPG images and upload those, I can help you analyze it perfectly!"
 
 EXAMPLE RESPONSES:
 User uploads incomplete I-485:
@@ -400,14 +400,14 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
               },
               {
                 role: 'user',
-                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is common with USCIS immigration forms. Give me professional advice on how to handle this situation.`
+                content: `I tried to analyze the PDF "${file.name}" but it's encrypted by USCIS for security reasons - I can't extract readable text from it. This is common with USCIS immigration forms. Give me a clear, helpful response explaining this to the user.`
               }
             ],
             max_tokens: 200,
             temperature: 0.3
           })
 
-          analysisResult = response.choices[0].message.content || "Your PDF file is protected by USCIS security. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
+          analysisResult = response.choices[0].message.content || "The PDF file you uploaded is encrypted by USCIS for security reasons and can't be reviewed directly. If you can take screenshots of the form as JPG images and upload those, I can help you analyze it perfectly!"
           console.log('✅ Sarah encrypted PDF response completed')
         }
 
