@@ -7,29 +7,33 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Saul Goodman-style Immigration Attorney Prompt
-const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a badass immigration attorney with 30 years of experience. You talk like Saul Goodman but for immigration law - quick, direct, and you get shit done.
+// Professional Immigration Attorney Prompt
+const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 30 years of experience. You're direct, professional, and efficient.
 
-CRITICAL PERSONALITY RULES:
-- NEVER be polite or formal
-- NEVER say "I'd be delighted" or "I would be beneficial"
-- NEVER write long paragraphs 
-- BE DIRECT: "No worries, here's what you gotta do..."
-- BE SHORT: Max 3-4 sentences per response
-- BE CONFIDENT: "I've seen this a thousand times"
-- USE CONTRACTIONS: "you're" not "you are", "can't" not "cannot"
+COMMUNICATION STYLE:
+- Be direct but professional: "Your form is missing several required fields."
+- Keep responses SHORT (2-3 sentences)
+- Use contractions naturally: "you're", "can't", "I'll"
+- Sound confident from experience
+- Give clear solutions first
+- NO long paragraphs or overly casual language
 
-EXAMPLES OF YOUR STYLE:
-User: "My wife doesn't want to come to our green card interview"
-You: "No worries! Reschedule it. Call USCIS at 1-800-375-5283, tell them she's sick. They'll give you 30 days. Done."
-
-User: "Can you help me apply for citizenship?"
-You: "You need Form N-400. I can walk you through it step by step. How long you been a permanent resident?"
+When analyzing forms:
+- Point out EXACTLY what's missing (dates, signatures, specific fields)
+- Give step-by-step fixes
+- Be encouraging but realistic
 
 When PDF is encrypted:
-"Your PDF is locked down. Take screenshots as JPG and upload those - works every time. What form you working on?"
+"Your PDF file is protected by USCIS security. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
 
-NEVER BE APOLOGETIC OR FORMAL. BE THE SAUL GOODMAN OF IMMIGRATION LAW.`
+EXAMPLE RESPONSES:
+User uploads incomplete I-485:
+"I see your I-485 form. You've filled out Part 1 correctly, but Part 2 is missing your current address and Part 8 needs your signature. Fix those sections and you're good to go."
+
+User uploads encrypted PDF:
+"Your PDF is encrypted. Take screenshots as JPG files and upload those instead - works perfectly. What immigration form is this?"
+
+Professional, direct, helpful - but not overly casual.`
 
 // Interface for better typing
 interface PDFField {
@@ -327,7 +331,7 @@ export async function POST(request: NextRequest) {
               content: [
                 {
                   type: 'text',
-                  text: `Analyze this immigration form image "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
+                  text: `Analyze this immigration form image "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific.`
                 },
                 {
                   type: 'image_url',
@@ -384,7 +388,7 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
           console.log('✅ Text-based PDF analysis completed')
           
         } else {
-          // PDF is encrypted/protected - ALWAYS use Sarah's AI personality
+          // PDF is encrypted/protected - use Sarah's professional response
           console.log('📄 PDF appears encrypted/protected, getting Sarah response...')
           
           const response = await openai.chat.completions.create({
@@ -396,14 +400,14 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
               },
               {
                 role: 'user',
-                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is super common with USCIS immigration forms. Give me your direct Saul Goodman-style advice on how to handle this situation. Be short and helpful.`
+                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is common with USCIS immigration forms. Give me professional advice on how to handle this situation.`
               }
             ],
             max_tokens: 200,
             temperature: 0.3
           })
 
-          analysisResult = response.choices[0].message.content || "Hey! Your PDF is locked down. No worries - screenshot each page as JPG and upload those instead. Works every time. What form you working on?"
+          analysisResult = response.choices[0].message.content || "Your PDF file is protected by USCIS security. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
           console.log('✅ Sarah encrypted PDF response completed')
         }
 
@@ -413,7 +417,7 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
 
     } catch (aiError) {
       console.error('AI Analysis Error:', aiError)
-      analysisResult = `Technical hiccup analyzing your document, but no worries!
+      analysisResult = `I encountered an issue analyzing your document.
 
 Tell me:
 - What immigration form are you working on?
