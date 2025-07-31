@@ -348,34 +348,108 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file with AGGRESSIVE parser...')
+        console.log('📄 Processing PDF file - trying image conversion...')
 
-        const extractedText = await parsePDF(buffer)
-        console.log(`📄 Final extracted text: ${extractedText.length} characters`)
+        // For protected/encrypted PDFs, convert to image and use vision
+        try {
+          console.log('🖼️ Converting PDF to image for vision analysis...')
+          
+          // Use pdf2pic to convert first page to image
+          const pdf2pic = await import('pdf2pic')
+          
+          const convertOptions = {
+            density: 200,           // High resolution
+            saveFilename: "page",
+            savePath: "/tmp/",
+            format: "png",
+            width: 2000,           // High width for clarity
+            height: 2600           // Standard form height
+          }
+          
+          const convert = pdf2pic.fromBuffer(buffer, convertOptions)
+          const pageImage = await convert(1, { responseType: "buffer" })
+          
+          if (pageImage && pageImage.buffer) {
+            console.log('✅ PDF converted to image, analyzing with vision...')
+            
+            const imageBase64 = pageImage.buffer.toString('base64')
+            
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4o',
+              messages: [
+                {
+                  role: 'system',
+                  content: DOCUMENT_ANALYSIS_PROMPT
+                },
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'text',
+                      text: `Analyze this immigration form PDF (converted to image) "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: {
+                        url: `data:image/png;base64,${imageBase64}`,
+                        detail: 'high'
+                      }
+                    }
+                  ]
+                }
+              ],
+              max_tokens: 1000,
+              temperature: 0.3
+            })
 
-        // Always send to AI, even if limited content
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4',
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
-            },
-            {
-              role: 'user',
-              content: `Here's what I extracted from "${file.name}" using aggressive parsing methods:
+            analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+            console.log('✅ PDF->Image analysis completed')
+          } else {
+            throw new Error('PDF conversion failed')
+          }
+          
+        } catch (conversionError) {
+          console.log('PDF->Image conversion failed, trying text extraction...', conversionError)
+          
+          // Fallback to text extraction
+          const extractedText = await parsePDF(buffer)
+          console.log(`📄 Final extracted text: ${extractedText.length} characters`)
+
+          if (extractedText.trim().length < 100) {
+            analysisResult = `Your PDF "${file.name}" appears to be encrypted or protected (common with USCIS forms).
+
+**Quick Fix:**
+1. **Take screenshots** of each page as JPG/PNG
+2. **Upload the images** - I can read them perfectly!
+3. Or tell me what form this is (I-130, I-485, etc.) and I'll guide you step by step
+
+What immigration form are you working on?`
+          } else {
+            // Analyze extracted text
+            const response = await openai.chat.completions.create({
+              model: 'gpt-4',
+              messages: [
+                {
+                  role: 'system',
+                  content: DOCUMENT_ANALYSIS_PROMPT
+                },
+                {
+                  role: 'user',
+                  content: `Here's what I extracted from "${file.name}":
 
 ${extractedText.slice(0, 7000)}
 
-Based on this content (even if limited), analyze what you can see. If the content seems minimal or corrupted, acknowledge that but still try to help by asking what immigration form they're working on so you can guide them step by step.`
-            }
-          ],
-          max_tokens: 1000,
-          temperature: 0.3
-        })
+Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed.`
+                }
+              ],
+              max_tokens: 1000,
+              temperature: 0.3
+            })
 
-        analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-        console.log('✅ PDF analysis completed')
+            analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+            console.log('✅ Text-based PDF analysis completed')
+          }
+        }
 
       } else {
         return NextResponse.json({ error: 'Upload PDF or image files only.' }, { status: 400 })
