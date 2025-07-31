@@ -42,36 +42,28 @@ export async function POST(request: NextRequest) {
   try {
     const { message, chatSessionId } = await request.json()
 
-    console.log('💬 Chat API called:', message)
-
     // Get authenticated user
     const cookieStore = cookies()
     const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      console.error('❌ Auth error:', authError)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's subscription status from profiles table
+    // Get user's message count and subscription status
     const { data: userData, error: userError } = await supabase
-      .from('profiles')
-      .select('subscription_status')
-      .eq('user_id', user.id)
+      .from('users')
+      .select('message_count, max_messages, subscription_status')
+      .eq('id', user.id)
       .single()
 
-    console.log('👤 User data from profiles:', userData, userError)
-
-    // Set default values if user data not found
-    const subscriptionStatus = userData?.subscription_status || 'premium'
-    const messageCount = 0
-    const maxMessages = subscriptionStatus === 'free' ? 15 : 999999
-
-    console.log('📊 Final user data:', { subscriptionStatus, messageCount, maxMessages })
+    if (userError) {
+      return NextResponse.json({ error: 'User data not found' }, { status: 404 })
+    }
 
     // Check message limits for free users
-    if (subscriptionStatus === 'free' && messageCount >= maxMessages) {
+    if (userData.subscription_status === 'free' && userData.message_count >= userData.max_messages) {
       return NextResponse.json({ 
         error: 'Message limit reached. Please upgrade to premium for unlimited messages.' 
       }, { status: 403 })
@@ -85,8 +77,6 @@ export async function POST(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(10)
 
-    console.log('📖 Recent messages:', recentMessages?.length || 0)
-
     // Prepare conversation history for OpenAI
     const conversationHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: IMMIGRATION_LAWYER_PROMPT },
@@ -98,13 +88,11 @@ export async function POST(request: NextRequest) {
     ]
 
     // Add context about user's subscription status for document upload prompts
-    if (subscriptionStatus === 'free') {
+    if (userData.subscription_status === 'free') {
       conversationHistory[0].content += `\n\nIMPORTANT: This user has a FREE account. When encouraging document uploads, mention that document analysis is a premium feature. Say something like: "Upload your form below (this is a premium feature) and I'll analyze it thoroughly" or "For detailed document analysis, you'll need to upgrade to premium, but I'm happy to answer general questions about the process."`
     } else {
       conversationHistory[0].content += `\n\nIMPORTANT: This user has PREMIUM access. Strongly encourage document uploads for personalized analysis since they have full access to this feature.`
     }
-
-    console.log('🤖 Calling OpenAI...')
 
     // Call OpenAI
     const completion = await openai.chat.completions.create({
@@ -114,14 +102,11 @@ export async function POST(request: NextRequest) {
       temperature: 0.7,
     })
 
-    const aiResponse = completion.choices[0]?.message?.content
+    const aiResponse = completion.choices[0].message.content
 
     if (!aiResponse) {
-      console.error('❌ No response from OpenAI')
       return NextResponse.json({ error: 'No response from AI' }, { status: 500 })
     }
-
-    console.log('✅ AI response received')
 
     // Save user message to database
     await supabase.from('messages').insert({
@@ -140,20 +125,23 @@ export async function POST(request: NextRequest) {
       ai_provider: 'openai'
     })
 
-    console.log('✅ Chat completed successfully')
+    // Update user message count
+    await supabase
+      .from('users')
+      .update({ message_count: userData.message_count + 1 })
+      .eq('id', user.id)
 
     return NextResponse.json({ 
       response: aiResponse,
-      messageCount: messageCount + 1,
-      maxMessages: maxMessages,
-      subscriptionStatus: subscriptionStatus
+      messageCount: userData.message_count + 1,
+      maxMessages: userData.max_messages,
+      subscriptionStatus: userData.subscription_status
     })
 
   } catch (error) {
-    console.error('❌ Chat API Error:', error)
+    console.error('AI Chat Error:', error)
     return NextResponse.json({ 
-      error: 'Sorry, I encountered an error. Please try again.',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Sorry, I encountered an error. Please try again.' 
     }, { status: 500 })
   }
 }
