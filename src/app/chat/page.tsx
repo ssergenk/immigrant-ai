@@ -1,5 +1,4 @@
-// src/app/chat/page.tsx
-'use client' // Keep this at the top
+'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { createSupabaseClient } from '@/lib/supabase'
@@ -8,7 +7,7 @@ import UpgradeModal from '@/components/ui/UpgradeModal'
 import FileUpload from '@/components/chat/FileUpload'
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher'
 import { LanguageProvider, useLanguage } from '@/contexts/LanguageContext'
-import { Crown, MessageCircle, Upload, RotateCcw } from 'lucide-react'
+import { Crown, MessageCircle, Upload, RotateCcw, Send, Menu, X } from 'lucide-react'
 
 interface Message {
   id: string
@@ -36,6 +35,7 @@ function ChatContent() {
   const [isUploading, setIsUploading] = useState(false)
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [isClearingChat, setIsClearingChat] = useState(false)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileUploadRef = useRef<HTMLDivElement>(null)
   const supabase = createSupabaseClient()
@@ -164,12 +164,9 @@ function ChatContent() {
   const sendMessage = async () => {
     if (!inputMessage.trim() || !user || !chatSessionId) return
 
-    console.log('🔥 sendMessage called with:', inputMessage)
-    console.log('🔥 Calling /api/chat endpoint')
-
     // Check message limits
     if (userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages) {
-      setShowUpgradeModal(true) // Open upgrade modal if limit reached
+      setShowUpgradeModal(true)
       return
     }
 
@@ -202,7 +199,7 @@ function ChatContent() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          setShowUpgradeModal(true) // Open upgrade modal on 403 (forbidden)
+          setShowUpgradeModal(true)
           return
         }
         throw new Error(data.error || 'Failed to get AI response')
@@ -224,7 +221,7 @@ function ChatContent() {
         })
       }
 
-      // Show upgrade modal if approaching limit
+      // Show upgrade modal if approaching limit (only for internal logic, no display)
       if (data.subscriptionStatus === 'free' && (data.maxMessages - data.messageCount) <= 2) {
         setTimeout(() => setShowUpgradeModal(true), 2000)
       }
@@ -242,9 +239,6 @@ function ChatContent() {
       console.error('User or chatSessionId not available for file upload.');
       return;
     }
-
-    console.log('📎 handleFileUpload called with:', file.name)
-    console.log('📎 Calling /api/analyze-document endpoint')
 
     // Add user's "message" indicating a document was uploaded
     const userUploadConfirmation: Message = {
@@ -280,8 +274,7 @@ function ChatContent() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          setShowUpgradeModal(true); // Open upgrade modal on 403 (forbidden)
-          // Remove the "Analyzing..." message if an upgrade is required
+          setShowUpgradeModal(true);
           setMessages(prev => prev.filter(msg => msg.id !== analyzingMessageId));
           return;
         }
@@ -291,14 +284,13 @@ function ChatContent() {
       // Update the "analyzing" message with the actual analysis result
       setMessages(prev => prev.map(msg =>
         msg.id === analyzingMessageId
-          ? { ...msg, content: data.analysis, id: (Date.now() + 1).toString() } // Update ID to ensure unique, final message
+          ? { ...msg, content: data.analysis, id: (Date.now() + 1).toString() }
           : msg
       ));
 
-      setShowFileUpload(false); // Hide upload area after successful upload
+      setShowFileUpload(false);
 
-      // IMPORTANT: Now, send a follow-up message to the chat API to give the AI context
-      // This will ensure the AI "remembers" the document and continues the conversation.
+      // Send follow-up message to chat API
       setIsTyping(true);
       const followUpResponse = await fetch('/api/chat', {
         method: 'POST',
@@ -306,10 +298,9 @@ function ChatContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // This "message" is an internal prompt for the AI to continue based on the document
           message: `The user has just uploaded and I have analyzed a document. The summary/analysis I provided to the user was: "${data.analysis}". Now, prompt the user to ask further questions about the document or their immigration needs. Keep your response concise and conversational.`,
           chatSessionId: chatSessionId,
-          language: currentLanguage // Ensure language is passed
+          language: currentLanguage
         }),
       });
 
@@ -319,7 +310,6 @@ function ChatContent() {
         throw new Error(followUpData.error || 'Failed to get follow-up AI response after document analysis');
       }
 
-      // Add the AI's follow-up question/response to the chat
       const aiFollowUpMessage: Message = {
         id: (Date.now() + 2).toString(),
         content: followUpData.response,
@@ -327,8 +317,6 @@ function ChatContent() {
       };
       setMessages(prev => [...prev, aiFollowUpMessage]);
 
-
-      // Update user data from the chat API response
       if (userData && followUpData.messageCount !== undefined) {
         setUserData({
           ...userData,
@@ -338,7 +326,6 @@ function ChatContent() {
 
     } catch (error) {
       console.error('Error uploading file or getting follow-up AI response:', error);
-      // Update the "analyzing" message with error message
       setMessages(prev => prev.map(msg =>
         msg.id === analyzingMessageId
           ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${(error as Error).message || 'Please try again.'}`, id: Date.now().toString() }
@@ -347,10 +334,9 @@ function ChatContent() {
       setError((error as Error).message || 'Failed to analyze document. Please try again.');
     } finally {
       setIsUploading(false);
-      setIsTyping(false); // Stop typing indicator after full flow
+      setIsTyping(false);
     }
   };
-
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -376,55 +362,107 @@ function ChatContent() {
     return null
   }
 
-  const messagesRemaining = userData ? userData.max_messages - userData.message_count : 0
   const isAtLimit = userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages
-  const showWarning = userData?.subscription_status === 'free' && messagesRemaining <= 3
   const isPremium = userData?.subscription_status === 'premium'
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-40 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 p-4">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">IA</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">ImmigrantAI</h1>
-              <span className="text-xs text-gray-400">Virtual Immigration Lawyer</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            {/* Language Switcher */}
-            <LanguageSwitcher
-              currentLanguage={currentLanguage}
-              onLanguageChange={setLanguage}
-            />
+    <main className="min-h-screen bg-gray-900 text-white overflow-hidden">
+      {/* Animated Background - Same as Homepage */}
+      <div className="fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-purple-900/20 to-gray-900"></div>
+        <div className="absolute top-0 left-1/4 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+      </div>
 
-            {/* Clear Chat Button */}
-            <button
-              onClick={clearChat}
-              disabled={isClearingChat}
-              className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors text-sm disabled:opacity-50"
-              title="Start New Chat"
-            >
-              {isClearingChat ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                  <span>Starting...</span>
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="w-4 h-4" />
-                  <span>New Chat</span>
-                </>
+      <div className="relative z-10 min-h-screen flex flex-col">
+        {/* Header - Same Style as Homepage */}
+        <header className="border-b border-gray-800/50 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
+          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <img 
+                src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                alt="ImmigrantAI" 
+                className="w-12 h-12 md:w-16 md:h-16 object-contain"
+              />
+              <div>
+                <h1 className="text-lg md:text-xl font-bold">ImmigrantAI</h1>
+                <span className="text-xs md:text-sm text-gray-400">AI Immigration Assistant</span>
+              </div>
+            </div>
+
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center gap-4">
+              <LanguageSwitcher
+                currentLanguage={currentLanguage}
+                onLanguageChange={setLanguage}
+              />
+
+              <button
+                onClick={clearChat}
+                disabled={isClearingChat}
+                className="flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-white transition-colors text-sm disabled:opacity-50 bg-gray-800/50 rounded-lg"
+                title="Start New Chat"
+              >
+                {isClearingChat ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span>Starting...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    <span>New Chat</span>
+                  </>
+                )}
+              </button>
+
+              {userData && (
+                <div className="flex items-center gap-3">
+                  {userData.subscription_status === 'premium' ? (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-yellow-600 to-yellow-700 rounded-lg">
+                      <Crown className="w-4 h-4" />
+                      <span className="text-sm font-semibold">Premium</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowUpgradeModal(true)}
+                      className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg transition-all duration-300 hover:scale-105"
+                    >
+                      <Crown className="w-4 h-4" />
+                      <span className="text-sm font-semibold">Upgrade</span>
+                    </button>
+                  )}
+                </div>
               )}
-            </button>
 
-            {userData && (
-              <div className="flex items-center gap-2">
-                {userData.subscription_status === 'premium' ? (
+              <span className="text-sm text-gray-300">
+                {user.user_metadata?.full_name || user.email?.split('@')[0]}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="text-sm text-gray-400 hover:text-white transition-colors px-3 py-2 hover:bg-gray-800/50 rounded-lg"
+              >
+                Logout
+              </button>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="md:hidden p-2 text-gray-400 hover:text-white"
+            >
+              {showMobileMenu ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
+
+          {/* Mobile Menu */}
+          {showMobileMenu && (
+            <div className="md:hidden border-t border-gray-800/50 bg-gray-900/95 backdrop-blur-sm p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-300">
+                  {user.user_metadata?.full_name || user.email?.split('@')[0]}
+                </span>
+                {userData?.subscription_status === 'premium' ? (
                   <div className="flex items-center gap-1 text-yellow-400">
                     <Crown className="w-4 h-4" />
                     <span className="text-sm font-semibold">Premium</span>
@@ -432,234 +470,220 @@ function ChatContent() {
                 ) : (
                   <button
                     onClick={() => setShowUpgradeModal(true)}
-                    className="flex items-center gap-1 text-yellow-400 hover:text-yellow-300 transition-colors text-sm"
+                    className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg text-sm"
                   >
                     <Crown className="w-4 h-4" />
                     <span>Upgrade</span>
                   </button>
                 )}
-
-                <div className="text-sm text-gray-300 flex items-center gap-1">
-                  <MessageCircle className="w-4 h-4" />
-                  {userData.subscription_status === 'free' ? (
-                    <span className={messagesRemaining <= 3 ? 'text-yellow-400 font-semibold' : ''}>
-                      {messagesRemaining} left
-                    </span>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <LanguageSwitcher
+                  currentLanguage={currentLanguage}
+                  onLanguageChange={setLanguage}
+                />
+                <button
+                  onClick={clearChat}
+                  disabled={isClearingChat}
+                  className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors text-sm disabled:opacity-50"
+                >
+                  {isClearingChat ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
+                      <span>Starting...</span>
+                    </>
                   ) : (
-                    <span className="text-green-400">∞</span>
+                    <>
+                      <RotateCcw className="w-4 h-4" />
+                      <span>New Chat</span>
+                    </>
                   )}
-                </div>
+                </button>
               </div>
-            )}
-            <span className="text-sm text-gray-300">
-              {user.user_metadata?.full_name || user.email}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-white transition-colors"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
 
-      {/* Warning Banner */}
-      {showWarning && !isAtLimit && (
-        <div className="bg-yellow-600 text-black px-4 py-2 text-center">
-          <span className="font-semibold">Only {messagesRemaining} messages left!</span>
-          <button
-            onClick={() => setShowUpgradeModal(true)}
-            className="ml-2 underline hover:no-underline"
-          >
-            Upgrade to premium for unlimited AI immigration help - just $14/month
-          </button>
-        </div>
-      )}
-
-      {/* Limit Reached Banner */}
-      {isAtLimit && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center">
-          <span className="font-semibold">You have used all 15 free messages!</span>
-          <button
-            onClick={() => setShowUpgradeModal(true)}
-            className="ml-2 underline hover:no-underline"
-          >
-            Upgrade to premium for unlimited messaging
-          </button>
-        </div>
-      )}
-
-      {/* Error Banner */}
-      {error && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center">
-          {error}
-        </div>
-      )}
-
-      {/* Chat Area */}
-      <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-8">
-              <div className="bg-gradient-to-r from-blue-400 to-purple-500 w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <span className="text-2xl">⚖️</span>
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">
-                Welcome to your Virtual Immigration Lawyer
-              </h2>
-              <p className="text-gray-400 max-w-md mx-auto">
-                I am here to help you navigate US immigration processes. Ask me anything about visas,
-                green cards, citizenship, or any immigration concerns you have.
-              </p>
-              {isPremium && (
-                <div className="mt-4 text-center">
-                  <p className="text-yellow-400 font-semibold mb-2">🌟 Premium Features Unlocked!</p>
-                  <p className="text-gray-300 text-sm">
-                    • Unlimited AI messages • Document analysis • Multi-language support
-                  </p>
-                  <p className="text-blue-400 text-sm mt-2">
-                    💡 Use the upload button below to analyze your immigration documents!
-                  </p>
-                </div>
-              )}
-              {userData?.subscription_status === 'free' && (
-                <div className="mt-4">
-                  <p className="text-yellow-400 font-semibold">
-                    You have {userData.max_messages} free messages to start!
-                  </p>
-                  <button
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="mt-2 text-blue-400 hover:text-blue-300 transition-colors text-sm underline"
-                  >
-                    Or upgrade to premium for unlimited messaging
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-100'
-                }`}
+              <button
+                onClick={handleLogout}
+                className="w-full text-left text-sm text-gray-400 hover:text-white transition-colors py-2"
               >
-                <div className="whitespace-pre-wrap">{message.content}</div>
-              </div>
-            </div>
-          ))}
-
-          {isTyping && (
-            <div className="flex justify-start">
-              <div className="bg-gray-700 text-gray-100 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                </div>
-              </div>
+                Logout
+              </button>
             </div>
           )}
+        </header>
 
-          {/* Invisible div to scroll to */}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* File Upload Section (when expanded) */}
-        {showFileUpload && (
-          <div ref={fileUploadRef} className="border-t border-gray-700 p-4">
-            <FileUpload
-              onFileUpload={handleFileUpload}
-              isUploading={isUploading}
-              disabled={!isPremium}
-              onUpgradeClick={() => setShowUpgradeModal(true)}
-            />
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-red-600/90 backdrop-blur-sm text-white px-4 py-3 text-center border-b border-red-500/50">
+            {error}
           </div>
         )}
 
-        {/* Message Input */}
-        <div className="border-t border-gray-700 p-4">
-          <div className="flex gap-2 mb-2">
-            <textarea
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={isAtLimit ? "Upgrade to premium to continue chatting..." : "Ask your immigration question..."}
-              className="flex-1 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 resize-none disabled:opacity-50"
-              rows={1}
-              disabled={isTyping || isAtLimit}
-            />
-            <button
-              onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
-              disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors"
-            >
-              {isAtLimit ? 'Upgrade' : 'Send'}
-            </button>
+        {/* Chat Container */}
+        <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
+            {messages.length === 0 && (
+              <div className="text-center py-8 md:py-16">
+                <div className="bg-gradient-to-r from-blue-500 to-purple-600 w-16 h-16 md:w-20 md:h-20 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg">
+                  <img 
+                    src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                    alt="ImmigrantAI" 
+                    className="w-8 h-8 md:w-10 md:h-10 object-contain"
+                  />
+                </div>
+                <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
+                  Welcome to ImmigrantAI
+                </h2>
+                <p className="text-gray-300 max-w-md mx-auto mb-6 text-sm md:text-base leading-relaxed">
+                  Your AI-powered immigration assistant is ready to help. Ask me anything about visas, green cards, citizenship, or any immigration concerns you have.
+                </p>
+                {isPremium && (
+                  <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-xl p-4 md:p-6 max-w-lg mx-auto">
+                    <p className="text-yellow-400 font-semibold mb-2 flex items-center justify-center gap-2">
+                      <Crown className="w-5 h-5" />
+                      Premium Features Active
+                    </p>
+                    <p className="text-gray-300 text-sm leading-relaxed">
+                      • Unlimited conversations • Document analysis • Priority support • Multi-language support
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
+              >
+                <div
+                  className={`max-w-[85%] md:max-w-2xl px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg ${
+                    message.role === 'user'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
+                      : 'bg-gray-800/80 backdrop-blur-sm text-gray-100 border border-gray-700/50'
+                  }`}
+                >
+                  <div className="whitespace-pre-wrap text-sm md:text-base leading-relaxed">{message.content}</div>
+                </div>
+              </div>
+            ))}
+
+            {isTyping && (
+              <div className="flex justify-start animate-fade-in">
+                <div className="bg-gray-800/80 backdrop-blur-sm border border-gray-700/50 max-w-xs px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Upload Button Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowFileUpload(!showFileUpload)}
-                disabled={isUploading}
-                className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors ${
-                  isPremium
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                    : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {isUploading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Document Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    {showFileUpload ? 'Hide Upload' : 'Upload Document'}
-                    {!isPremium && <Crown className="w-3 h-3" />}
-                  </>
-                )}
-              </button>
+          {/* File Upload Section */}
+          {showFileUpload && (
+            <div ref={fileUploadRef} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 md:p-6">
+              <FileUpload
+                onFileUpload={handleFileUpload}
+                isUploading={isUploading}
+                disabled={!isPremium}
+                onUpgradeClick={() => setShowUpgradeModal(true)}
+              />
+            </div>
+          )}
 
-              {!isPremium && (
-                <button
-                  onClick={() => setShowUpgradeModal(true)}
-                  className="text-yellow-400 hover:text-yellow-300 text-xs underline"
-                >
-                  Premium Feature
-                </button>
-              )}
+          {/* Input Area */}
+          <div className="border-t border-gray-800/50 bg-gray-900/80 backdrop-blur-sm p-4 md:p-6">
+            <div className="flex gap-2 md:gap-3 mb-3 md:mb-4">
+              <textarea
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={isAtLimit ? "Upgrade to premium to continue chatting..." : "Ask your immigration question..."}
+                className="flex-1 bg-gray-800/80 backdrop-blur-sm text-white border border-gray-600/50 rounded-xl px-4 md:px-6 py-3 md:py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-50 text-sm md:text-base"
+                rows={1}
+                disabled={isTyping || isAtLimit}
+              />
+              <button
+                onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
+                disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white px-4 md:px-6 py-3 md:py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center gap-2"
+              >
+                <Send className="w-4 h-4 md:w-5 md:h-5" />
+                <span className="hidden sm:inline">{isAtLimit ? 'Upgrade' : 'Send'}</span>
+              </button>
             </div>
 
-            <div className="text-xs text-gray-500">
-              {isAtLimit ?
-                'Upgrade to premium for unlimited messaging' :
-                'Press Enter to send, Shift+Enter for new line'
-              }
+            {/* Bottom Controls */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 md:gap-3">
+                <button
+                  onClick={() => setShowFileUpload(!showFileUpload)}
+                  disabled={isUploading}
+                  className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm transition-all duration-300 ${
+                    isPremium
+                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white hover:scale-105'
+                      : 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isUploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span className="hidden sm:inline">Analyzing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span className="hidden sm:inline">{showFileUpload ? 'Hide Upload' : 'Upload Document'}</span>
+                      {!isPremium && <Crown className="w-3 h-3" />}
+                    </>
+                  )}
+                </button>
+
+                {!isPremium && (
+                  <button
+                    onClick={() => setShowUpgradeModal(true)}
+                    className="text-yellow-400 hover:text-yellow-300 text-xs underline"
+                  >
+                    Premium Feature
+                  </button>
+                )}
+              </div>
+
+              <div className="text-xs text-gray-500 hidden sm:block">
+                {isAtLimit ?
+                  'Upgrade to premium for unlimited messaging' :
+                  'Press Enter to send • Shift+Enter for new line'
+                }
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Upgrade Modal */}
+        <UpgradeModal
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          messagesUsed={userData?.message_count || 0}
+          maxMessages={userData?.max_messages || 15}
+        />
       </div>
 
-      {/* Upgrade Modal */}
-      <UpgradeModal
-        isOpen={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        messagesUsed={userData?.message_count || 0}
-        maxMessages={userData?.max_messages || 15}
-      />
-    </div>
+      <style jsx>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
+    </main>
   )
 }
 
