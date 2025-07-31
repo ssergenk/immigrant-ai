@@ -186,7 +186,7 @@ async function parsePDF(buffer: Buffer): Promise<string> {
       
       // Look for common PDF strings in hex
       const commonStrings = ['Name', 'Type', 'Kids', 'Parent', 'Page', 'Text', 'Font', 'obj', 'endobj']
-      const hexFindings = []
+      const hexFindings: string[] = []
       
       commonStrings.forEach(str => {
         const hexPattern = Buffer.from(str, 'utf8').toString('hex')
