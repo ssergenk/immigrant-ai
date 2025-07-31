@@ -1,666 +1,460 @@
-// src/app/chat/page.tsx
-'use client' // Keep this at the top
+import { NextRequest, NextResponse } from 'next/server'
+import OpenAI from 'openai'
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 
-import { useState, useEffect, useRef } from 'react'
-import { createSupabaseClient } from '@/lib/supabase'
-import { User } from '@supabase/supabase-js'
-import UpgradeModal from '@/components/ui/UpgradeModal'
-import FileUpload from '@/components/chat/FileUpload'
-import LanguageSwitcher from '@/components/ui/LanguageSwitcher'
-import { LanguageProvider, useLanguage } from '@/contexts/LanguageContext'
-import { Crown, MessageCircle, Upload, RotateCcw } from 'lucide-react'
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+})
 
-interface Message {
-  id: string
-  content: string
-  role: 'user' | 'assistant'
-  created_at?: string
+// Professional Immigration Attorney Prompt
+const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 30 years of experience. You're direct, helpful, and professional.
+
+COMMUNICATION STYLE:
+- Be direct but professional: "Your PDF file is encrypted. USCIS does this for security reasons."
+- Keep responses SHORT (2-3 sentences)
+- Use contractions naturally: "you're", "can't", "I'll"
+- Sound confident from experience
+- Give clear solutions first
+- NO long paragraphs or overly casual language
+
+When analyzing forms:
+- Point out EXACTLY what's missing (dates, signatures, specific fields)
+- Give step-by-step fixes
+- Be encouraging but realistic
+
+When PDF is encrypted:
+"Your PDF file is locked. USCIS protects their forms for security reasons. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
+
+NEVER be overly casual or use slang. Professional but direct.`
+
+// Interface for better typing
+interface PDFField {
+  name: string;
+  value: string;
+  type: string;
 }
 
-interface UserData {
-  message_count: number
-  max_messages: number
-  subscription_status: 'free' | 'premium' | 'canceled'
-}
-
-function ChatContent() {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [inputMessage, setInputMessage] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
-  const [chatSessionId, setChatSessionId] = useState<string>('')
-  const [userData, setUserData] = useState<UserData | null>(null)
-  const [error, setError] = useState<string>('')
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-  const [showFileUpload, setShowFileUpload] = useState(false)
-  const [isClearingChat, setIsClearingChat] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const fileUploadRef = useRef<HTMLDivElement>(null)
-  const supabase = createSupabaseClient()
-
-  // Language support
-  const { currentLanguage, setLanguage } = useLanguage()
-
-  // Scroll to bottom when new messages arrive
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  // Scroll to file upload section when it opens
-  const scrollToFileUpload = () => {
-    if (fileUploadRef.current) {
-      fileUploadRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, isTyping])
-
-  useEffect(() => {
-    if (showFileUpload) {
-      setTimeout(scrollToFileUpload, 100)
-    }
-  }, [showFileUpload])
-
-  useEffect(() => {
-    // Check if user is authenticated and load chat session
-    const initializeChat = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-
-      if (!user) {
-        window.location.href = '/'
-        return
-      }
-
-      // Get user data
-      const { data: userInfo } = await supabase
-        .from('users')
-        .select('message_count, max_messages, subscription_status')
-        .eq('id', user.id)
-        .single()
-
-      if (userInfo) {
-        setUserData(userInfo)
-      }
-
-      // Create or get existing chat session
-      const { data: existingSession } = await supabase
-        .from('chat_sessions')
-        .select('id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-
-      let sessionId: string
-
-      if (existingSession && existingSession.length > 0) {
-        sessionId = existingSession[0].id
-      } else {
-        // Create new chat session
-        const { data: newSession } = await supabase
-          .from('chat_sessions')
-          .insert({ user_id: user.id, title: 'Immigration Consultation' })
-          .select('id')
-          .single()
-
-        sessionId = newSession?.id || ''
-      }
-
-      setChatSessionId(sessionId)
-
-      // Load existing messages
-      if (sessionId) {
-        const { data: existingMessages } = await supabase
-          .from('messages')
-          .select('id, content, role, created_at')
-          .eq('chat_session_id', sessionId)
-          .order('created_at', { ascending: true })
-
-        if (existingMessages) {
-          setMessages(existingMessages)
-        }
-      }
-
-      setLoading(false)
-    }
-
-    initializeChat()
-  }, [supabase])
-
-  const clearChat = async () => {
-    if (!user || !chatSessionId) return
-
-    setIsClearingChat(true)
-
+// Super aggressive PDF parsing function
+async function parsePDF(buffer: Buffer): Promise<string> {
+  console.log('🔍 Starting AGGRESSIVE PDF parsing...')
+  let extractedContent = ''
+  
+  try {
+    // Method 1: Standard pdf-parse with detailed logging
+    console.log('📄 Method 1: Standard pdf-parse')
     try {
-      // Create a new chat session
-      const { data: newSession } = await supabase
-        .from('chat_sessions')
-        .insert({
-          user_id: user.id,
-          title: `Immigration Consultation - ${new Date().toLocaleDateString()}`
-        })
-        .select('id')
-        .single()
-
-      if (newSession) {
-        setChatSessionId(newSession.id)
-        setMessages([])
-        setError('')
-        setShowFileUpload(false)
-      }
-    } catch (error) {
-      console.error('Error creating new chat session:', error)
-      setError('Failed to start new chat. Please try again.')
-    } finally {
-      setIsClearingChat(false)
-    }
-  }
-
-  const sendMessage = async () => {
-    if (!inputMessage.trim() || !user || !chatSessionId) return
-
-    // Check message limits
-    if (userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages) {
-      setShowUpgradeModal(true) // Open upgrade modal if limit reached
-      return
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputMessage,
-      role: 'user'
-    }
-
-    setMessages(prev => [...prev, userMessage])
-    setInputMessage('')
-    setIsTyping(true)
-    setError('')
-
-    try {
-      // Call AI API with language support
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: inputMessage,
-          chatSessionId: chatSessionId,
-          language: currentLanguage
-        }),
+      const pdfParse = (await import('pdf-parse')).default
+      const pdfData = await pdfParse(buffer, {
+        max: 0 // Disable page limit to avoid test file issues
       })
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          setShowUpgradeModal(true) // Open upgrade modal on 403 (forbidden)
-          return
-        }
-        throw new Error(data.error || 'Failed to get AI response')
+      console.log(`PDF Info - Pages: ${pdfData.numpages}, Text Length: ${pdfData.text.length}`)
+      console.log(`First 500 chars of text: "${pdfData.text.substring(0, 500)}"`)
+      
+      if (pdfData.text.trim().length > 20) {
+        extractedContent += `PDF-PARSE CONTENT:\n${pdfData.text}\n\n`
       }
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: data.response,
-        role: 'assistant'
-      }
-
-      setMessages(prev => [...prev, aiMessage])
-
-      // Update user data
-      if (userData) {
-        setUserData({
-          ...userData,
-          message_count: data.messageCount
-        })
-      }
-
-      // Show upgrade modal if approaching limit
-      if (data.subscriptionStatus === 'free' && (data.maxMessages - data.messageCount) <= 2) {
-        setTimeout(() => setShowUpgradeModal(true), 2000)
-      }
-
-    } catch (error) {
-      console.error('Error sending message:', error)
-      setError((error as Error).message || 'Failed to send message. Please try again.')
-    } finally {
-      setIsTyping(false)
-    }
-  }
-
-  const handleFileUpload = async (file: File) => {
-    if (!user || !chatSessionId) {
-      console.error('User or chatSessionId not available for file upload.');
-      return;
+    } catch (pdfParseError) {
+      console.log('pdf-parse failed:', pdfParseError)
+      extractedContent += `PDF-PARSE FAILED: ${pdfParseError}\n\n`
     }
 
-    // Add user's "message" indicating a document was uploaded
-    const userUploadConfirmation: Message = {
-      id: `user-upload-${Date.now()}`,
-      content: `I've just uploaded a document: "${file.name}"`,
-      role: 'user'
-    };
-    setMessages(prev => [...prev, userUploadConfirmation]);
-
-    // Add initial "Analyzing..." message from assistant
-    const analyzingMessageId = `analysis-${Date.now()}`;
-    const analyzingMessage: Message = {
-      id: analyzingMessageId,
-      content: `📄 **Uploading "${file.name}"...**\n\n🔍 Analyzing your document with AI. This may take a moment...`,
-      role: 'assistant'
-    };
-    setMessages(prev => [...prev, analyzingMessage]);
-
-    setIsUploading(true);
-    setError('');
-
+    // Method 2: pdf-lib form field extraction with extensive logging
+    console.log('📄 Method 2: pdf-lib form field extraction')
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('chatSessionId', chatSessionId);
-
-      const response = await fetch('/api/analyze-document', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          setShowUpgradeModal(true); // Open upgrade modal on 403 (forbidden)
-          // Remove the "Analyzing..." message if an upgrade is required
-          setMessages(prev => prev.filter(msg => msg.id !== analyzingMessageId));
-          return;
+      const { PDFDocument } = await import('pdf-lib')
+      const pdfDoc = await PDFDocument.load(buffer)
+      
+      // Get document info
+      const pageCount = pdfDoc.getPageCount()
+      const title = pdfDoc.getTitle()
+      const creator = pdfDoc.getCreator()
+      
+      console.log(`PDF Metadata - Pages: ${pageCount}, Title: ${title}, Creator: ${creator}`)
+      
+      const form = pdfDoc.getForm()
+      const fields = form.getFields()
+      
+      console.log(`Found ${fields.length} form fields`)
+      
+      let formFieldsText = ''
+      const processedFields: PDFField[] = []
+      
+      fields.forEach((field, index) => {
+        try {
+          const fieldName = field.getName()
+          const fieldType = field.constructor.name
+          
+          console.log(`Field ${index}: ${fieldName} (${fieldType})`)
+          
+          let fieldValue = ''
+          
+          // Handle different field types with proper error handling
+          if (fieldType.includes('TextField')) {
+            try {
+              const textField = field as unknown as { getText(): string }
+              fieldValue = textField.getText ? textField.getText() : 'NO_TEXT_METHOD'
+            } catch {
+              fieldValue = 'TEXT_FIELD_ERROR'
+            }
+          } else if (fieldType.includes('CheckBox')) {
+            try {
+              const checkField = field as unknown as { isChecked(): boolean }
+              fieldValue = checkField.isChecked ? (checkField.isChecked() ? 'CHECKED' : 'UNCHECKED') : 'NO_CHECKED_METHOD'
+            } catch {
+              fieldValue = 'CHECKBOX_ERROR'
+            }
+          } else if (fieldType.includes('Dropdown')) {
+            try {
+              const dropdownField = field as unknown as { getSelected(): string[] | undefined }
+              const selected = dropdownField.getSelected ? dropdownField.getSelected() : null
+              fieldValue = selected ? JSON.stringify(selected) : 'NO_SELECTION'
+            } catch {
+              fieldValue = 'DROPDOWN_ERROR'
+            }
+          } else {
+            fieldValue = `UNKNOWN_TYPE_${fieldType}`
+          }
+          
+          processedFields.push({ name: fieldName, value: fieldValue, type: fieldType })
+          formFieldsText += `${fieldName}: ${fieldValue}\n`
+          console.log(`  Value: ${fieldValue}`)
+          
+        } catch (fieldError) {
+          console.log(`Field ${index} processing error:`, fieldError)
+          formFieldsText += `Field_${index}: PROCESSING_ERROR\n`
         }
-        throw new Error(data.error || 'Failed to analyze document');
+      })
+      
+      if (formFieldsText.trim()) {
+        extractedContent += `FORM FIELDS (${fields.length} total):\n${formFieldsText}\n\n`
       }
-
-      // Update the "analyzing" message with the actual analysis result
-      setMessages(prev => prev.map(msg =>
-        msg.id === analyzingMessageId
-          ? { ...msg, content: data.analysis, id: (Date.now() + 1).toString() } // Update ID to ensure unique, final message
-          : msg
-      ));
-
-      setShowFileUpload(false); // Hide upload area after successful upload
-
-      // IMPORTANT: Now, send a follow-up message to the chat API to give the AI context
-      // This will ensure the AI "remembers" the document and continues the conversation.
-      setIsTyping(true);
-      const followUpResponse = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          // This "message" is an internal prompt for the AI to continue based on the document
-          message: `The user has just uploaded and I have analyzed a document. The summary/analysis I provided to the user was: "${data.analysis}". Now, prompt the user to ask further questions about the document or their immigration needs. Keep your response concise and conversational.`,
-          chatSessionId: chatSessionId,
-          language: currentLanguage // Ensure language is passed
-        }),
-      });
-
-      const followUpData = await followUpResponse.json();
-
-      if (!followUpResponse.ok) {
-        throw new Error(followUpData.error || 'Failed to get follow-up AI response after document analysis');
-      }
-
-      // Add the AI's follow-up question/response to the chat
-      const aiFollowUpMessage: Message = {
-        id: (Date.now() + 2).toString(),
-        content: followUpData.response,
-        role: 'assistant'
-      };
-      setMessages(prev => [...prev, aiFollowUpMessage]);
-
-
-      // Update user data from the chat API response
-      if (userData && followUpData.messageCount !== undefined) {
-        setUserData({
-          ...userData,
-          message_count: followUpData.messageCount
-        });
-      }
-
-    } catch (error) {
-      console.error('Error uploading file or getting follow-up AI response:', error);
-      // Update the "analyzing" message with error message
-      setMessages(prev => prev.map(msg =>
-        msg.id === analyzingMessageId
-          ? { ...msg, content: `❌ **Upload Failed**\n\nSorry, I couldn't analyze your document. ${(error as Error).message || 'Please try again.'}`, id: Date.now().toString() }
-          : msg
-      ));
-      setError((error as Error).message || 'Failed to analyze document. Please try again.');
-    } finally {
-      setIsUploading(false);
-      setIsTyping(false); // Stop typing indicator after full flow
+      
+    } catch (pdfLibError) {
+      console.log('pdf-lib error:', pdfLibError)
+      extractedContent += `PDF-LIB ERROR: ${pdfLibError}\n\n`
     }
-  };
 
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
-    }
-  }
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading your chat...</div>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return null
-  }
-
-  const messagesRemaining = userData ? userData.max_messages - userData.message_count : 0
-  const isAtLimit = userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages
-  const showWarning = userData?.subscription_status === 'free' && messagesRemaining <= 3
-  const isPremium = userData?.subscription_status === 'premium'
-
-  return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-40 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 p-4">
-        <div className="max-w-4xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">IA</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">ImmigrantAI</h1>
-              <span className="text-xs text-gray-400">Virtual Immigration Lawyer</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            {/* Language Switcher */}
-            <LanguageSwitcher
-              currentLanguage={currentLanguage}
-              onLanguageChange={setLanguage}
-            />
-
-            {/* Clear Chat Button */}
-            <button
-              onClick={clearChat}
-              disabled={isClearingChat}
-              className="flex items-center gap-1 text-gray-400 hover:text-white transition-colors text-sm disabled:opacity-50"
-              title="Start New Chat"
-            >
-              {isClearingChat ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                  <span>Starting...</span>
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="w-4 h-4" />
-                  <span>New Chat</span>
-                </>
-              )}
-            </button>
-
-            {userData && (
-              <div className="flex items-center gap-2">
-                {userData.subscription_status === 'premium' ? (
-                  <div className="flex items-center gap-1 text-yellow-400">
-                    <Crown className="w-4 h-4" />
-                    <span className="text-sm font-semibold">Premium</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="flex items-center gap-1 text-yellow-400 hover:text-yellow-300 transition-colors text-sm"
-                  >
-                    <Crown className="w-4 h-4" />
-                    <span>Upgrade</span>
-                  </button>
-                )}
-
-                <div className="text-sm text-gray-300 flex items-center gap-1">
-                  <MessageCircle className="w-4 h-4" />
-                  {userData.subscription_status === 'free' ? (
-                    <span className={messagesRemaining <= 3 ? 'text-yellow-400 font-semibold' : ''}>
-                      {messagesRemaining} left
-                    </span>
-                  ) : (
-                    <span className="text-green-400">∞</span>
-                  )}
-                </div>
-              </div>
-            )}
-            <span className="text-sm text-gray-300">
-              {user.user_metadata?.full_name || user.email}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-400 hover:text-white transition-colors"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Warning Banner */}
-      {showWarning && !isAtLimit && (
-        <div className="bg-yellow-600 text-black px-4 py-2 text-center">
-          <span className="font-semibold">Only {messagesRemaining} messages left!</span>
-          <button
-            onClick={() => setShowUpgradeModal(true)}
-            className="ml-2 underline hover:no-underline"
-          >
-            Upgrade to premium for unlimited AI immigration help - just $14/month
-          </button>
-        </div>
-      )}
-
-      {/* Limit Reached Banner */}
-      {isAtLimit && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center">
-          <span className="font-semibold">You have used all 15 free messages!</span>
-          <button
-            onClick={() => setShowUpgradeModal(true)}
-            className="ml-2 underline hover:no-underline"
-          >
-            Upgrade to premium for unlimited messaging
-          </button>
-        </div>
-      )}
-
-      {/* Error Banner */}
-      {error && (
-        <div className="bg-red-600 text-white px-4 py-2 text-center">
-          {error}
-        </div>
-      )}
-
-      {/* Chat Area */}
-      <div className="flex-1 max-w-4xl mx-auto w-full flex flex-col">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center py-8">
-              <div className="bg-gradient-to-r from-blue-400 to-purple-500 w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <span className="text-2xl">⚖️</span>
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">
-                Welcome to your Virtual Immigration Lawyer
-              </h2>
-              <p className="text-gray-400 max-w-md mx-auto">
-                I am here to help you navigate US immigration processes. Ask me anything about visas,
-                green cards, citizenship, or any immigration concerns you have.
-              </p>
-              {isPremium && (
-                <div className="mt-4 text-center">
-                  <p className="text-yellow-400 font-semibold mb-2">🌟 Premium Features Unlocked!</p>
-                  <p className="text-gray-300 text-sm">
-                    • Unlimited AI messages • Document analysis • Multi-language support
-                  </p>
-                  <p className="text-blue-400 text-sm mt-2">
-                    💡 Use the upload button below to analyze your immigration documents!
-                  </p>
-                </div>
-              )}
-              {userData?.subscription_status === 'free' && (
-                <div className="mt-4">
-                  <p className="text-yellow-400 font-semibold">
-                    You have {userData.max_messages} free messages to start!
-                  </p>
-                  <button
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="mt-2 text-blue-400 hover:text-blue-300 transition-colors text-sm underline"
-                  >
-                    Or upgrade to premium for unlimited messaging
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                  message.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-700 text-gray-100'
-                }`}
-              >
-                <div className="whitespace-pre-wrap">{message.content}</div>
-              </div>
-            </div>
-          ))}
-
-          {isTyping && (
-            <div className="flex justify-start">
-              <div className="bg-gray-700 text-gray-100 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
-                <div className="flex space-x-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Invisible div to scroll to */}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* File Upload Section (when expanded) */}
-        {showFileUpload && (
-          <div ref={fileUploadRef} className="border-t border-gray-700 p-4">
-            <FileUpload
-              onFileUpload={handleFileUpload}
-              isUploading={isUploading}
-              disabled={!isPremium}
-              onUpgradeClick={() => setShowUpgradeModal(true)}
-            />
-          </div>
-        )}
-
-        {/* Message Input */}
-        <div className="border-t border-gray-700 p-4">
-          <div className="flex gap-2 mb-2">
-            <textarea
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder={isAtLimit ? "Upgrade to premium to continue chatting..." : "Ask your immigration question..."}
-              className="flex-1 bg-gray-800 text-white border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500 resize-none disabled:opacity-50"
-              rows={1}
-              disabled={isTyping || isAtLimit}
-            />
-            <button
-              onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
-              disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg transition-colors"
-            >
-              {isAtLimit ? 'Upgrade' : 'Send'}
-            </button>
-          </div>
-
-          {/* Upload Button Row */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowFileUpload(!showFileUpload)}
-                disabled={isUploading}
-                className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm transition-colors ${
-                  isPremium
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                    : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {isUploading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Document Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    {showFileUpload ? 'Hide Upload' : 'Upload Document'}
-                    {!isPremium && <Crown className="w-3 h-3" />}
-                  </>
-                )}
-              </button>
-
-              {!isPremium && (
-                <button
-                  onClick={() => setShowUpgradeModal(true)}
-                  className="text-yellow-400 hover:text-yellow-300 text-xs underline"
-                >
-                  Premium Feature
-                </button>
-              )}
-            </div>
-
-            <div className="text-xs text-gray-500">
-              {isAtLimit ?
-                'Upgrade to premium for unlimited messaging' :
-                'Press Enter to send, Shift+Enter for new line'
+    // Method 3: Raw buffer analysis with multiple encodings
+    console.log('📄 Method 3: Raw buffer analysis')
+    
+    // Try different encodings
+    const encodings: BufferEncoding[] = ['utf8', 'ascii', 'latin1', 'binary']
+    
+    encodings.forEach(encoding => {
+      try {
+        const rawText = buffer.toString(encoding)
+        console.log(`${encoding} encoding - Length: ${rawText.length}`)
+        
+        // Look for text patterns
+        const patterns = [
+          /\/T\s*\(([^)]+)\)/g,     // Text field values
+          /\/V\s*\(([^)]+)\)/g,     // Field values  
+          /\/DA\s*\(([^)]+)\)/g,    // Default appearance
+          /BT\s+([^E]+)ET/g,        // Text objects
+          /\(([^)]{3,50})\)/g,      // Any text in parentheses
+          /\/F\d+\s+(\w+)/g,        // Font references
+          /stream\s*\n([^e]+)endstream/g, // Stream content
+        ]
+        
+        let patternText = ''
+        patterns.forEach((pattern, i) => {
+          const matches = rawText.match(pattern)
+          if (matches) {
+            console.log(`Pattern ${i} found ${matches.length} matches in ${encoding}`)
+            matches.slice(0, 10).forEach(match => { // Limit to first 10 matches
+              const cleaned = match.replace(/[\/\(\)BTET]/g, '').trim()
+              if (cleaned.length > 2 && cleaned.match(/[a-zA-Z]/)) {
+                patternText += cleaned + ' '
               }
-            </div>
-          </div>
-        </div>
-      </div>
+            })
+          }
+        })
+        
+        if (patternText.trim().length > 10) {
+          extractedContent += `${encoding.toUpperCase()} PATTERNS:\n${patternText.trim()}\n\n`
+        }
+        
+      } catch (encodingError) {
+        console.log(`${encoding} encoding failed:`, encodingError)
+      }
+    })
 
-      {/* Upgrade Modal */}
-      <UpgradeModal
-        isOpen={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        messagesUsed={userData?.message_count || 0}
-        maxMessages={userData?.max_messages || 15}
-      />
-    </div>
-  )
+    // Method 4: Hex dump analysis
+    console.log('📄 Method 4: Hex analysis')
+    try {
+      const hexString = buffer.toString('hex')
+      console.log(`Hex length: ${hexString.length}`)
+      
+      // Look for common PDF strings in hex
+      const commonStrings = ['Name', 'Type', 'Kids', 'Parent', 'Page', 'Text', 'Font', 'obj', 'endobj']
+      const hexFindings: string[] = []
+      
+      commonStrings.forEach(str => {
+        const hexPattern = Buffer.from(str, 'utf8').toString('hex')
+        if (hexString.includes(hexPattern)) {
+          hexFindings.push(str)
+        }
+      })
+      
+      if (hexFindings.length > 0) {
+        extractedContent += `HEX ANALYSIS - Found: ${hexFindings.join(', ')}\n\n`
+      }
+      
+    } catch (hexError) {
+      console.log('Hex analysis failed:', hexError)
+    }
+
+    // Method 5: Chunk analysis
+    console.log('📄 Method 5: Chunk analysis')
+    try {
+      const chunkSize = 1000
+      const chunks = []
+      
+      for (let i = 0; i < buffer.length; i += chunkSize) {
+        const chunk = buffer.slice(i, i + chunkSize)
+        const chunkText = chunk.toString('utf8').replace(/[^\x20-\x7E]/g, '')
+        
+        if (chunkText.length > 50) {
+          chunks.push(`Chunk ${Math.floor(i/chunkSize)}: ${chunkText.substring(0, 200)}`)
+        }
+      }
+      
+      if (chunks.length > 0) {
+        extractedContent += `CHUNKS FOUND:\n${chunks.slice(0, 5).join('\n')}\n\n`
+      }
+      
+    } catch (chunkError) {
+      console.log('Chunk analysis failed:', chunkError)
+    }
+
+    console.log(`📄 Total extracted content length: ${extractedContent.length}`)
+    console.log(`📄 First 1000 chars: "${extractedContent.substring(0, 1000)}"`)
+
+    return extractedContent.trim()
+
+  } catch (error) {
+    console.error('❌ Complete PDF parsing failure:', error)
+    return `PARSING_ERROR: ${error}`
+  }
 }
 
-export default function ChatPage() {
-  return (
-    <LanguageProvider>
-      <ChatContent />
-    </LanguageProvider>
-  )
+export async function POST(request: NextRequest) {
+  console.log('🔍 Document analysis API called')
+
+  try {
+    const formData = await request.formData()
+    const file = formData.get('file') as File
+    const chatSessionId = formData.get('chatSessionId') as string
+
+    console.log('📁 File received:', file?.name, 'Size:', file?.size, 'Type:', file?.type)
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    }
+
+    // Get authenticated user
+    const cookieStore = cookies()
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check if user has premium subscription
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('subscription_status')
+      .eq('id', user.id)
+      .single()
+
+    if (userError || userData.subscription_status !== 'premium') {
+      return NextResponse.json({
+        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.'
+      }, { status: 403 })
+    }
+
+    console.log('✅ Premium user verified, analyzing document...')
+
+    // Convert file to buffer for storage and processing
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    // Upload file to Supabase storage (optional - continue if fails)
+    const fileName = `${Date.now()}_${file.name}`
+    const storagePath = `uploads/${user.id}/${fileName}`
+
+    console.log('📤 Uploading file to Supabase storage...')
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(storagePath, buffer, {
+          contentType: file.type,
+          upsert: true // Allow overwrite to avoid conflicts
+        })
+
+      if (uploadError) {
+        console.log('❌ Storage upload error (continuing anyway):', uploadError)
+      } else {
+        console.log('✅ File uploaded to storage:', uploadData.path)
+      }
+    } catch (storageError) {
+      console.log('❌ Storage upload failed (continuing anyway):', storageError)
+    }
+
+    let analysisResult: string
+
+    try {
+      if (file.type.startsWith('image/')) {
+        console.log('🖼️ Processing image with AI Vision...')
+
+        const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
+
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: DOCUMENT_ANALYSIS_PROMPT
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Analyze this immigration form image "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${file.type};base64,${fileBase64}`,
+                    detail: 'high'
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 1000,
+          temperature: 0.3
+        })
+
+        analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+        console.log('✅ Image analysis completed')
+
+      } else if (file.type === 'application/pdf') {
+        console.log('📄 Processing PDF file...')
+
+        // Try text extraction first
+        const extractedText = await parsePDF(buffer)
+        console.log(`📄 Extracted text: ${extractedText.length} characters`)
+
+        // Check if we got meaningful content
+        const meaningfulText = extractedText.replace(/[^\w\s]/g, '').trim()
+        
+        if (meaningfulText.length > 200) {
+          // We have enough readable text, analyze it
+          console.log('📄 Analyzing extracted text content...')
+          
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: `Here's what I extracted from "${file.name}":
+
+${extractedText.slice(0, 7000)}
+
+Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed.`
+              }
+            ],
+            max_tokens: 1000,
+            temperature: 0.3
+          })
+
+          analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+          console.log('✅ Text-based PDF analysis completed')
+          
+        } else {
+          // PDF is encrypted/protected - ALWAYS use Sarah's AI personality
+          console.log('📄 PDF appears encrypted/protected, getting Sarah response...')
+          
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is super common with USCIS immigration forms. Give me your direct Saul Goodman-style advice on how to handle this situation. Be short and helpful.`
+              }
+            ],
+            max_tokens: 200,
+            temperature: 0.3
+          })
+
+          analysisResult = response.choices[0].message.content || "Hey! Your PDF is locked down. No worries - screenshot each page as JPG and upload those instead. Works every time. What form you working on?"
+          console.log('✅ Sarah encrypted PDF response completed')
+        }
+
+      } else {
+        return NextResponse.json({ error: 'Upload PDF or image files only.' }, { status: 400 })
+      }
+
+    } catch (aiError) {
+      console.error('AI Analysis Error:', aiError)
+      analysisResult = `Technical hiccup analyzing your document, but no worries!
+
+Tell me:
+- What immigration form are you working on?
+- What specific questions do you have?
+- What sections are giving you trouble?
+
+I can help you step by step even without the file analysis.`
+    }
+
+    // Save to database
+    try {
+      await supabase.from('uploaded_files').insert({
+        user_id: user.id,
+        chat_session_id: chatSessionId,
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        storage_path: storagePath,
+        analysis_result: { analysis: analysisResult }
+      })
+
+      await supabase.from('messages').insert({
+        chat_session_id: chatSessionId,
+        user_id: user.id,
+        content: analysisResult,
+        role: 'assistant',
+        ai_provider: 'openai'
+      })
+
+      console.log('💾 Analysis saved successfully')
+    } catch (dbError) {
+      console.log('❌ Database save error:', dbError)
+    }
+
+    return NextResponse.json({
+      analysis: analysisResult,
+      success: true
+    })
+
+  } catch (error) {
+    console.error('💥 Document Analysis Error:', error)
+    return NextResponse.json({
+      error: 'Something went wrong analyzing your document. Try again.',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
 }
