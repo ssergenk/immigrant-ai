@@ -8,27 +8,37 @@ export default function Home() {
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
   const [isTyping, setIsTyping] = useState(true)
 
-  // Fake chat conversation for preview
+  // Enhanced chat conversation for preview
   const chatConversation = [
     { 
       role: 'user', 
-      message: "Can I apply for a visa if I overstayed before?",
+      message: "I overstayed my F-1 visa by 3 months. Can I still apply for a green card through marriage?",
       delay: 1000
     },
     { 
       role: 'ai', 
-      message: "I understand your concern about the overstay - this is actually more common than you think, and there are definitely options available depending on your specific situation.\n\nThe impact depends on how long you overstayed and what type of visa you're applying for. Many people in similar situations have found successful paths forward.\n\nCan you tell me how long the overstay was and what visa you're hoping to apply for?",
+      message: "Great question! Since you overstayed less than 180 days, you're actually in a much better position than you might think.\n\nFor marriage-based green cards, you can typically adjust status in the US even with short overstays, as long as you entered legally (which you did on F-1).\n\nThe key is having a genuine marriage and perfect documentation. What's your timeline for getting married?",
       delay: 3000
     },
     { 
       role: 'user', 
-      message: "I overstayed by 6 months on a tourist visa. Now I want to apply for a marriage-based green card.",
+      message: "We're getting married next month! What documents do I need to prepare?",
       delay: 2000
     },
     { 
       role: 'ai', 
-      message: "Great news! Since you're applying for a marriage-based green card and your overstay was less than one year, you're actually in a much better position than many people realize.\n\nFor marriage-based cases, you can typically adjust status even with an overstay under one year, as long as you entered legally (which you did on the tourist visa).\n\nThe key things we need to focus on are proving your marriage is genuine and ensuring all your paperwork is perfect. Would you like me to walk you through the I-485 process?",
+      message: "Perfect timing! Here's your priority checklist:\n\n✅ Form I-485 (Adjustment of Status)\n✅ Form I-130 (Petition for spouse)\n✅ Form I-864 (Affidavit of Support)\n✅ Marriage certificate\n✅ Joint financial documents\n✅ Medical examination (Form I-693)\n\nI can help you review each form before submission. Would you like me to walk through the I-485 first?",
       delay: 3500
+    },
+    { 
+      role: 'user', 
+      message: "Yes please! I'm worried about making mistakes.",
+      delay: 1500
+    },
+    { 
+      role: 'ai', 
+      message: "I completely understand that concern! The I-485 is crucial and small errors can cause major delays.\n\nI'll guide you through each section step-by-step. I've helped over 5,000 people with their applications - we'll make sure yours is perfect.\n\nLet's start with Part 1: Your biographical information...",
+      delay: 3000
     }
   ]
 
@@ -45,11 +55,11 @@ export default function Home() {
           setTimeout(() => {
             setCurrentMessageIndex(0)
             setIsTyping(true)
-          }, 2000)
+          }, 3000)
           return prev
         }
       })
-    }, 5000)
+    }, 4000)
 
     return () => clearInterval(timer)
   }, [chatConversation.length])
@@ -67,10 +77,12 @@ export default function Home() {
         {/* Header */}
         <header className="border-b border-gray-800/50 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-sm">IA</span>
-              </div>
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                alt="ImmigrantAI" 
+                className="w-10 h-10 object-contain"
+              />
               <span className="text-xl font-bold">ImmigrantAI</span>
             </div>
             <nav className="hidden md:flex items-center gap-6 text-sm">
@@ -133,11 +145,13 @@ export default function Home() {
               <div className="animate-slide-left">
                 <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-6 shadow-2xl">
                   <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-700">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                      <span className="text-white font-bold text-sm">IA</span>
-                    </div>
+                    <img 
+                      src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                      alt="ImmigrantAI" 
+                      className="w-10 h-10 object-contain bg-gradient-to-r from-blue-500 to-purple-600 rounded-full p-1"
+                    />
                     <div>
-                      <div className="font-semibold">Sarah Chen, Immigration Attorney</div>
+                      <div className="font-semibold">ImmigrantAI Assistant</div>
                       <div className="text-sm text-green-400 flex items-center gap-1">
                         <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                         Online now
@@ -145,7 +159,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="space-y-4 h-80 overflow-hidden">
+                  <div className="space-y-4 h-96 overflow-hidden">
                     {chatConversation.slice(0, currentMessageIndex + 1).map((msg, index) => (
                       <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-message-appear`}>
                         <div className={`max-w-xs px-4 py-3 rounded-2xl ${
@@ -184,7 +198,7 @@ export default function Home() {
                 </div>
 
                 <div className="text-center mt-4 text-sm text-gray-400">
-                  ↑ Real conversation preview - Try it yourself!
+                  ↑ Enhanced conversation preview - Real immigration scenarios!
                 </div>
               </div>
             </div>
@@ -380,14 +394,16 @@ export default function Home() {
         <footer className="border-t border-gray-800/50 py-12 bg-gray-900/80">
           <div className="container mx-auto px-4">
             <div className="flex flex-col md:flex-row justify-between items-center">
-              <div className="flex items-center gap-2 mb-4 md:mb-0">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">IA</span>
-                </div>
+              <div className="flex items-center gap-3 mb-4 md:mb-0">
+                <img 
+                  src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                  alt="ImmigrantAI" 
+                  className="w-8 h-8 object-contain"
+                />
                 <span className="text-xl font-bold">ImmigrantAI</span>
               </div>
               <div className="text-sm text-gray-400">
-                © 2024 ImmigrantAI. Your trusted AI immigration assistant.
+                © 2025 ImmigrantAI. Your trusted AI immigration assistant.
               </div>
             </div>
           </div>
