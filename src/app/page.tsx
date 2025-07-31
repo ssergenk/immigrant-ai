@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import GoogleLogin from '@/components/auth/GoogleLogin'
-import { MessageCircle, Shield, Clock, Globe, FileText, CheckCircle, Star, Play } from 'lucide-react'
+import { MessageCircle, Shield, Clock, Globe, FileText, CheckCircle, Star } from 'lucide-react'
 
 export default function Home() {
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0)
@@ -126,8 +126,8 @@ export default function Home() {
         <section className="py-12 md:py-20 lg:py-32">
           <div className="container mx-auto px-4">
             <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
-              {/* Left: Hero Content */}
-              <div className="text-center lg:text-left order-2 lg:order-1">
+              {/* Left: Hero Content - Always first on mobile */}
+              <div className="text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 bg-blue-600/20 text-blue-300 px-3 md:px-4 py-2 rounded-full text-xs md:text-sm mb-4 md:mb-6 animate-fade-in">
                   <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                   24/7 AI Immigration Assistant
@@ -148,10 +148,13 @@ export default function Home() {
                   <div className="flex-1">
                     <GoogleLogin />
                   </div>
-                  <button className="flex items-center justify-center gap-2 px-4 md:px-6 py-3 border border-gray-600 rounded-lg text-white hover:bg-gray-800 transition-all duration-300 hover:scale-105 text-sm md:text-base">
-                    <Play className="w-4 h-4" />
-                    Watch Demo
-                  </button>
+                  <a 
+                    href="/chat" 
+                    className="flex items-center justify-center gap-2 px-4 md:px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-lg text-white transition-all duration-300 hover:scale-105 text-sm md:text-base font-medium shadow-lg"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    Chat Now
+                  </a>
                 </div>
                 
                 <div className="flex flex-wrap items-center justify-center lg:justify-start gap-4 md:gap-6 text-xs md:text-sm text-gray-400 animate-fade-in delay-600">
@@ -170,8 +173,8 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Right: Live Chat Preview */}
-              <div className="animate-slide-left order-1 lg:order-2">
+              {/* Right: Live Chat Preview - Second on mobile */}
+              <div className="animate-slide-left">
                 <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-700/50 p-4 md:p-6 shadow-2xl mx-auto max-w-md lg:max-w-none">
                   <div className="flex items-center gap-3 mb-4 md:mb-6 pb-3 md:pb-4 border-b border-gray-700">
                     <img 
