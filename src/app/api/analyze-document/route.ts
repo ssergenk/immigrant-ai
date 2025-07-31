@@ -32,124 +32,199 @@ You: "You need Form N-400. Here's the link: uscis.gov/n-400. I can help you step
 
 CRITICAL: Base everything on the ACTUAL form content I give you. Be specific about what fields are filled vs empty.`
 
-// Reliable PDF parsing function
+// Super aggressive PDF parsing function
 async function parsePDF(buffer: Buffer): Promise<string> {
-  console.log('🔍 Starting reliable PDF parsing...')
+  console.log('🔍 Starting AGGRESSIVE PDF parsing...')
+  let extractedContent = ''
   
   try {
-    // Method 1: Standard pdf-parse (most reliable)
+    // Method 1: Standard pdf-parse with detailed logging
     console.log('📄 Method 1: Standard pdf-parse')
     const pdfParse = (await import('pdf-parse')).default
     const pdfData = await pdfParse(buffer)
 
-    console.log(`PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} characters`)
+    console.log(`PDF Info - Pages: ${pdfData.numpages}, Text Length: ${pdfData.text.length}`)
+    console.log(`First 500 chars of text: "${pdfData.text.substring(0, 500)}"`)
     
-    if (pdfData.text.trim().length > 100) {
-      return pdfData.text
+    if (pdfData.text.trim().length > 20) {
+      extractedContent += `PDF-PARSE CONTENT:\n${pdfData.text}\n\n`
     }
 
-    // Method 2: Try pdf-lib for form field extraction
-    console.log('📄 Method 2: Form field extraction with pdf-lib')
+    // Method 2: pdf-lib form field extraction with extensive logging
+    console.log('📄 Method 2: pdf-lib form field extraction')
     try {
       const { PDFDocument } = await import('pdf-lib')
       const pdfDoc = await PDFDocument.load(buffer)
+      
+      // Get document info
+      const pageCount = pdfDoc.getPageCount()
+      const title = pdfDoc.getTitle()
+      const creator = pdfDoc.getCreator()
+      
+      console.log(`PDF Metadata - Pages: ${pageCount}, Title: ${title}, Creator: ${creator}`)
+      
       const form = pdfDoc.getForm()
       const fields = form.getFields()
       
-      let formData = ''
       console.log(`Found ${fields.length} form fields`)
       
-      fields.forEach((field) => {
+      let formFieldsText = ''
+      
+      fields.forEach((field, index) => {
         try {
           const fieldName = field.getName()
+          const fieldType = field.constructor.name
+          
+          console.log(`Field ${index}: ${fieldName} (${fieldType})`)
+          
           let fieldValue = ''
           
-          // Try to get field value based on type
-          if ('getText' in field && typeof (field as unknown as { getText: () => string }).getText === 'function') {
-            fieldValue = (field as unknown as { getText: () => string }).getText() || ''
-          } else if ('isChecked' in field && typeof (field as unknown as { isChecked: () => boolean }).isChecked === 'function') {
-            fieldValue = (field as unknown as { isChecked: () => boolean }).isChecked() ? 'Checked' : 'Unchecked'
+          // Handle different field types
+          if (fieldType.includes('TextField')) {
+            try {
+              const textField = field as any
+              fieldValue = textField.getText ? textField.getText() : 'NO_TEXT_METHOD'
+            } catch (e) {
+              fieldValue = 'TEXT_FIELD_ERROR'
+            }
+          } else if (fieldType.includes('CheckBox')) {
+            try {
+              const checkField = field as any
+              fieldValue = checkField.isChecked ? (checkField.isChecked() ? 'CHECKED' : 'UNCHECKED') : 'NO_CHECKED_METHOD'
+            } catch (e) {
+              fieldValue = 'CHECKBOX_ERROR'
+            }
+          } else if (fieldType.includes('Dropdown')) {
+            try {
+              const dropdownField = field as any
+              const selected = dropdownField.getSelected ? dropdownField.getSelected() : null
+              fieldValue = selected ? JSON.stringify(selected) : 'NO_SELECTION'
+            } catch (e) {
+              fieldValue = 'DROPDOWN_ERROR'
+            }
+          } else {
+            fieldValue = `UNKNOWN_TYPE_${fieldType}`
           }
           
-          if (fieldName && fieldValue) {
-            formData += `${fieldName}: ${fieldValue}\n`
-          }
+          formFieldsText += `${fieldName}: ${fieldValue}\n`
+          console.log(`  Value: ${fieldValue}`)
+          
         } catch (fieldError) {
-          console.log('Field extraction error:', fieldError)
+          console.log(`Field ${index} processing error:`, fieldError)
+          formFieldsText += `Field_${index}: PROCESSING_ERROR\n`
         }
       })
       
-      if (formData.trim()) {
-        console.log(`✅ Extracted ${formData.length} characters of form data`)
-        return `FORM FIELDS:\n\n${formData}\n\nRAW TEXT:\n${pdfData.text}`
+      if (formFieldsText.trim()) {
+        extractedContent += `FORM FIELDS (${fields.length} total):\n${formFieldsText}\n\n`
       }
+      
     } catch (pdfLibError) {
-      console.log('pdf-lib extraction failed:', pdfLibError)
+      console.log('pdf-lib error:', pdfLibError)
+      extractedContent += `PDF-LIB ERROR: ${pdfLibError}\n\n`
     }
 
-    // Method 3: Raw text extraction patterns
-    console.log('📄 Method 3: Raw text pattern extraction')
+    // Method 3: Raw buffer analysis with multiple encodings
+    console.log('📄 Method 3: Raw buffer analysis')
+    
+    // Try different encodings
+    const encodings = ['utf8', 'ascii', 'latin1', 'binary']
+    
+    encodings.forEach(encoding => {
+      try {
+        const rawText = buffer.toString(encoding as BufferEncoding)
+        console.log(`${encoding} encoding - Length: ${rawText.length}`)
+        
+        // Look for text patterns
+        const patterns = [
+          /\/T\s*\(([^)]+)\)/g,     // Text field values
+          /\/V\s*\(([^)]+)\)/g,     // Field values  
+          /\/DA\s*\(([^)]+)\)/g,    // Default appearance
+          /BT\s+([^E]+)ET/g,        // Text objects
+          /\(([^)]{3,50})\)/g,      // Any text in parentheses
+          /\/F\d+\s+(\w+)/g,        // Font references
+          /stream\s*\n([^e]+)endstream/g, // Stream content
+        ]
+        
+        let patternText = ''
+        patterns.forEach((pattern, i) => {
+          const matches = rawText.match(pattern)
+          if (matches) {
+            console.log(`Pattern ${i} found ${matches.length} matches in ${encoding}`)
+            matches.slice(0, 10).forEach(match => { // Limit to first 10 matches
+              const cleaned = match.replace(/[\/\(\)BTET]/g, '').trim()
+              if (cleaned.length > 2 && cleaned.match(/[a-zA-Z]/)) {
+                patternText += cleaned + ' '
+              }
+            })
+          }
+        })
+        
+        if (patternText.trim().length > 10) {
+          extractedContent += `${encoding.toUpperCase()} PATTERNS:\n${patternText.trim()}\n\n`
+        }
+        
+      } catch (encodingError) {
+        console.log(`${encoding} encoding failed:`, encodingError)
+      }
+    })
+
+    // Method 4: Hex dump analysis
+    console.log('📄 Method 4: Hex analysis')
     try {
-      const rawText = buffer.toString('utf8')
-      let extractedText = ''
+      const hexString = buffer.toString('hex')
+      console.log(`Hex length: ${hexString.length}`)
       
-      // Common PDF text patterns
-      const patterns = [
-        /\((.*?)\)/g,        // Text in parentheses
-        /\/T\s*\((.*?)\)/g,  // Text field values
-        /\/V\s*\((.*?)\)/g,  // Field values
-        /BT\s+(.*?)\s+ET/g   // Text objects
-      ]
+      // Look for common PDF strings in hex
+      const commonStrings = ['Name', 'Type', 'Kids', 'Parent', 'Page', 'Text', 'Font', 'obj', 'endobj']
+      const hexFindings = []
       
-      patterns.forEach(pattern => {
-        const matches = rawText.match(pattern)
-        if (matches) {
-          matches.forEach(match => {
-            const cleaned = match.replace(/[()\/TVB ET]/g, '').trim()
-            if (cleaned.length > 3 && cleaned.match(/[a-zA-Z]/)) {
-              extractedText += cleaned + ' '
-            }
-          })
+      commonStrings.forEach(str => {
+        const hexPattern = Buffer.from(str, 'utf8').toString('hex')
+        if (hexString.includes(hexPattern)) {
+          hexFindings.push(str)
         }
       })
       
-      if (extractedText.trim().length > 50) {
-        console.log(`✅ Pattern extraction: ${extractedText.length} characters`)
-        return extractedText.trim()
+      if (hexFindings.length > 0) {
+        extractedContent += `HEX ANALYSIS - Found: ${hexFindings.join(', ')}\n\n`
       }
-    } catch (patternError) {
-      console.log('Pattern extraction failed:', patternError)
+      
+    } catch (hexError) {
+      console.log('Hex analysis failed:', hexError)
     }
 
-    // Method 4: Binary text extraction
-    console.log('📄 Method 4: Binary text extraction')
+    // Method 5: Chunk analysis
+    console.log('📄 Method 5: Chunk analysis')
     try {
-      const binaryText = buffer.toString('binary')
-      const textMatches = binaryText.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{20,}/g)
+      const chunkSize = 1000
+      const chunks = []
       
-      if (textMatches && textMatches.length > 0) {
-        const combinedText = textMatches.join(' ').slice(0, 8000)
-        if (combinedText.trim().length > 100) {
-          console.log(`✅ Binary extraction: ${combinedText.length} characters`)
-          return combinedText
+      for (let i = 0; i < buffer.length; i += chunkSize) {
+        const chunk = buffer.slice(i, i + chunkSize)
+        const chunkText = chunk.toString('utf8').replace(/[^\x20-\x7E]/g, '')
+        
+        if (chunkText.length > 50) {
+          chunks.push(`Chunk ${Math.floor(i/chunkSize)}: ${chunkText.substring(0, 200)}`)
         }
       }
-    } catch (binaryError) {
-      console.log('Binary extraction failed:', binaryError)
+      
+      if (chunks.length > 0) {
+        extractedContent += `CHUNKS FOUND:\n${chunks.slice(0, 5).join('\n')}\n\n`
+      }
+      
+    } catch (chunkError) {
+      console.log('Chunk analysis failed:', chunkError)
     }
 
-    // If we still have some text from pdf-parse, use it
-    if (pdfData.text.trim().length > 0) {
-      console.log(`Using pdf-parse fallback: ${pdfData.text.length} characters`)
-      return pdfData.text
-    }
+    console.log(`📄 Total extracted content length: ${extractedContent.length}`)
+    console.log(`📄 First 1000 chars: "${extractedContent.substring(0, 1000)}"`)
 
-    console.log('❌ All extraction methods failed')
-    return ''
+    return extractedContent.trim()
 
   } catch (error) {
-    console.error('❌ PDF parsing completely failed:', error)
-    return ''
+    console.error('❌ Complete PDF parsing failure:', error)
+    return `PARSING_ERROR: ${error}`
   }
 }
 
@@ -253,45 +328,34 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file...')
+        console.log('📄 Processing PDF file with AGGRESSIVE parser...')
 
         const extractedText = await parsePDF(buffer)
         console.log(`📄 Final extracted text: ${extractedText.length} characters`)
 
-        if (extractedText.trim().length < 50) {
-          analysisResult = `Hey, I'm having trouble reading your PDF "${file.name}". 
+        // Always send to AI, even if limited content
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            {
+              role: 'system',
+              content: DOCUMENT_ANALYSIS_PROMPT
+            },
+            {
+              role: 'user',
+              content: `Here's what I extracted from "${file.name}" using aggressive parsing methods:
 
-Here's what works better:
-1. **Upload as images** - Take screenshots of each page and upload as JPG/PNG
-2. **Tell me what form** - What immigration form are you working on? I can guide you step by step
+${extractedText.slice(0, 7000)}
 
-What form are you trying to fill out? I-130? I-485? I-131? Let me know and I'll help you get it right.`
+Based on this content (even if limited), analyze what you can see. If the content seems minimal or corrupted, acknowledge that but still try to help by asking what immigration form they're working on so you can guide them step by step.`
+            }
+          ],
+          max_tokens: 1000,
+          temperature: 0.3
+        })
 
-        } else {
-          // Analyze with GPT-4
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4',
-            messages: [
-              {
-                role: 'system',
-                content: DOCUMENT_ANALYSIS_PROMPT
-              },
-              {
-                role: 'user',
-                content: `Here's the content from "${file.name}":
-
-${extractedText.slice(0, 6000)}
-
-Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific.`
-              }
-            ],
-            max_tokens: 1000,
-            temperature: 0.3
-          })
-
-          analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-          console.log('✅ PDF analysis completed')
-        }
+        analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+        console.log('✅ PDF analysis completed')
 
       } else {
         return NextResponse.json({ error: 'Upload PDF or image files only.' }, { status: 400 })
