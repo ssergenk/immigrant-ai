@@ -7,252 +7,42 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Professional Immigration Attorney Prompt
-const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 30 years of experience. You're direct, helpful, and professional.
+// Immigration lawyer system prompt
+const IMMIGRATION_LAWYER_PROMPT = `You are Sarah Chen, a senior immigration attorney with 30 years of experience. You're direct, helpful, and efficient - no fluff.
 
 COMMUNICATION STYLE:
-- Be direct but professional: "Your PDF file is encrypted. USCIS does this for security reasons."
-- Keep responses SHORT (2-3 sentences)
-- Use contractions naturally: "you're", "can't", "I'll"
-- Sound confident from experience
-- Give clear solutions first
-- NO long paragraphs or overly casual language
+- Be direct but encouraging: "No worries, here's what you need to do..."
+- Keep responses SHORT (2-3 sentences max)
+- Use contractions: "you're" not "you are", "can't" not "cannot"
+- Sound confident: "I've handled this situation many times"
+- Give solutions first, then ask ONE follow-up question
+- NO bullet points, lists, or formal language
+- NO long paragraphs or explanations
 
-When analyzing forms:
-- Point out EXACTLY what's missing (dates, signatures, specific fields)
-- Give step-by-step fixes
-- Be encouraging but realistic
+DOCUMENT UPLOAD STRATEGY:
+When users ask about specific forms, encourage upload:
+"I can help you with your [form name]. Upload it below and I'll check it section by section. What specific questions do you have?"
 
-When PDF is encrypted:
-"Your PDF file is locked. USCIS protects their forms for security reasons. Take screenshots of each page as JPG images and upload those - I can analyze images perfectly. What form are you working on?"
+IMMIGRATION EXPERTISE:
+- All immigration forms and processes
+- Family-based, employment-based, student visas
+- Green cards, citizenship, asylum cases
+- RFEs, NOIDs, deportation defense
 
-NEVER be overly casual or use slang. Professional but direct.`
+EXAMPLE RESPONSES:
+User: "Help me with my I-130"
+You: "I can help you with your I-130. Upload the form below and I'll review it section by section. Who are you filing for - spouse, parent, or child?"
 
-// Interface for better typing
-interface PDFField {
-  name: string;
-  value: string;
-  type: string;
-}
+User: "My case is taking too long"
+You: "Processing delays are frustrating but normal right now. What type of case and when did you file? I can tell you typical timelines."
 
-// Super aggressive PDF parsing function
-async function parsePDF(buffer: Buffer): Promise<string> {
-  console.log('🔍 Starting AGGRESSIVE PDF parsing...')
-  let extractedContent = ''
-  
-  try {
-    // Method 1: Standard pdf-parse with detailed logging
-    console.log('📄 Method 1: Standard pdf-parse')
-    try {
-      const pdfParse = (await import('pdf-parse')).default
-      const pdfData = await pdfParse(buffer, {
-        max: 0 // Disable page limit to avoid test file issues
-      })
-
-      console.log(`PDF Info - Pages: ${pdfData.numpages}, Text Length: ${pdfData.text.length}`)
-      console.log(`First 500 chars of text: "${pdfData.text.substring(0, 500)}"`)
-      
-      if (pdfData.text.trim().length > 20) {
-        extractedContent += `PDF-PARSE CONTENT:\n${pdfData.text}\n\n`
-      }
-    } catch (pdfParseError) {
-      console.log('pdf-parse failed:', pdfParseError)
-      extractedContent += `PDF-PARSE FAILED: ${pdfParseError}\n\n`
-    }
-
-    // Method 2: pdf-lib form field extraction with extensive logging
-    console.log('📄 Method 2: pdf-lib form field extraction')
-    try {
-      const { PDFDocument } = await import('pdf-lib')
-      const pdfDoc = await PDFDocument.load(buffer)
-      
-      // Get document info
-      const pageCount = pdfDoc.getPageCount()
-      const title = pdfDoc.getTitle()
-      const creator = pdfDoc.getCreator()
-      
-      console.log(`PDF Metadata - Pages: ${pageCount}, Title: ${title}, Creator: ${creator}`)
-      
-      const form = pdfDoc.getForm()
-      const fields = form.getFields()
-      
-      console.log(`Found ${fields.length} form fields`)
-      
-      let formFieldsText = ''
-      const processedFields: PDFField[] = []
-      
-      fields.forEach((field, index) => {
-        try {
-          const fieldName = field.getName()
-          const fieldType = field.constructor.name
-          
-          console.log(`Field ${index}: ${fieldName} (${fieldType})`)
-          
-          let fieldValue = ''
-          
-          // Handle different field types with proper error handling
-          if (fieldType.includes('TextField')) {
-            try {
-              const textField = field as unknown as { getText(): string }
-              fieldValue = textField.getText ? textField.getText() : 'NO_TEXT_METHOD'
-            } catch {
-              fieldValue = 'TEXT_FIELD_ERROR'
-            }
-          } else if (fieldType.includes('CheckBox')) {
-            try {
-              const checkField = field as unknown as { isChecked(): boolean }
-              fieldValue = checkField.isChecked ? (checkField.isChecked() ? 'CHECKED' : 'UNCHECKED') : 'NO_CHECKED_METHOD'
-            } catch {
-              fieldValue = 'CHECKBOX_ERROR'
-            }
-          } else if (fieldType.includes('Dropdown')) {
-            try {
-              const dropdownField = field as unknown as { getSelected(): string[] | undefined }
-              const selected = dropdownField.getSelected ? dropdownField.getSelected() : null
-              fieldValue = selected ? JSON.stringify(selected) : 'NO_SELECTION'
-            } catch {
-              fieldValue = 'DROPDOWN_ERROR'
-            }
-          } else {
-            fieldValue = `UNKNOWN_TYPE_${fieldType}`
-          }
-          
-          processedFields.push({ name: fieldName, value: fieldValue, type: fieldType })
-          formFieldsText += `${fieldName}: ${fieldValue}\n`
-          console.log(`  Value: ${fieldValue}`)
-          
-        } catch (fieldError) {
-          console.log(`Field ${index} processing error:`, fieldError)
-          formFieldsText += `Field_${index}: PROCESSING_ERROR\n`
-        }
-      })
-      
-      if (formFieldsText.trim()) {
-        extractedContent += `FORM FIELDS (${fields.length} total):\n${formFieldsText}\n\n`
-      }
-      
-    } catch (pdfLibError) {
-      console.log('pdf-lib error:', pdfLibError)
-      extractedContent += `PDF-LIB ERROR: ${pdfLibError}\n\n`
-    }
-
-    // Method 3: Raw buffer analysis with multiple encodings
-    console.log('📄 Method 3: Raw buffer analysis')
-    
-    // Try different encodings
-    const encodings: BufferEncoding[] = ['utf8', 'ascii', 'latin1', 'binary']
-    
-    encodings.forEach(encoding => {
-      try {
-        const rawText = buffer.toString(encoding)
-        console.log(`${encoding} encoding - Length: ${rawText.length}`)
-        
-        // Look for text patterns
-        const patterns = [
-          /\/T\s*\(([^)]+)\)/g,     // Text field values
-          /\/V\s*\(([^)]+)\)/g,     // Field values  
-          /\/DA\s*\(([^)]+)\)/g,    // Default appearance
-          /BT\s+([^E]+)ET/g,        // Text objects
-          /\(([^)]{3,50})\)/g,      // Any text in parentheses
-          /\/F\d+\s+(\w+)/g,        // Font references
-          /stream\s*\n([^e]+)endstream/g, // Stream content
-        ]
-        
-        let patternText = ''
-        patterns.forEach((pattern, i) => {
-          const matches = rawText.match(pattern)
-          if (matches) {
-            console.log(`Pattern ${i} found ${matches.length} matches in ${encoding}`)
-            matches.slice(0, 10).forEach(match => { // Limit to first 10 matches
-              const cleaned = match.replace(/[\/\(\)BTET]/g, '').trim()
-              if (cleaned.length > 2 && cleaned.match(/[a-zA-Z]/)) {
-                patternText += cleaned + ' '
-              }
-            })
-          }
-        })
-        
-        if (patternText.trim().length > 10) {
-          extractedContent += `${encoding.toUpperCase()} PATTERNS:\n${patternText.trim()}\n\n`
-        }
-        
-      } catch (encodingError) {
-        console.log(`${encoding} encoding failed:`, encodingError)
-      }
-    })
-
-    // Method 4: Hex dump analysis
-    console.log('📄 Method 4: Hex analysis')
-    try {
-      const hexString = buffer.toString('hex')
-      console.log(`Hex length: ${hexString.length}`)
-      
-      // Look for common PDF strings in hex
-      const commonStrings = ['Name', 'Type', 'Kids', 'Parent', 'Page', 'Text', 'Font', 'obj', 'endobj']
-      const hexFindings: string[] = []
-      
-      commonStrings.forEach(str => {
-        const hexPattern = Buffer.from(str, 'utf8').toString('hex')
-        if (hexString.includes(hexPattern)) {
-          hexFindings.push(str)
-        }
-      })
-      
-      if (hexFindings.length > 0) {
-        extractedContent += `HEX ANALYSIS - Found: ${hexFindings.join(', ')}\n\n`
-      }
-      
-    } catch (hexError) {
-      console.log('Hex analysis failed:', hexError)
-    }
-
-    // Method 5: Chunk analysis
-    console.log('📄 Method 5: Chunk analysis')
-    try {
-      const chunkSize = 1000
-      const chunks = []
-      
-      for (let i = 0; i < buffer.length; i += chunkSize) {
-        const chunk = buffer.slice(i, i + chunkSize)
-        const chunkText = chunk.toString('utf8').replace(/[^\x20-\x7E]/g, '')
-        
-        if (chunkText.length > 50) {
-          chunks.push(`Chunk ${Math.floor(i/chunkSize)}: ${chunkText.substring(0, 200)}`)
-        }
-      }
-      
-      if (chunks.length > 0) {
-        extractedContent += `CHUNKS FOUND:\n${chunks.slice(0, 5).join('\n')}\n\n`
-      }
-      
-    } catch (chunkError) {
-      console.log('Chunk analysis failed:', chunkError)
-    }
-
-    console.log(`📄 Total extracted content length: ${extractedContent.length}`)
-    console.log(`📄 First 1000 chars: "${extractedContent.substring(0, 1000)}"`)
-
-    return extractedContent.trim()
-
-  } catch (error) {
-    console.error('❌ Complete PDF parsing failure:', error)
-    return `PARSING_ERROR: ${error}`
-  }
-}
+Keep it short, direct, and helpful.`
 
 export async function POST(request: NextRequest) {
-  console.log('🔍 Document analysis API called')
-
   try {
-    const formData = await request.formData()
-    const file = formData.get('file') as File
-    const chatSessionId = formData.get('chatSessionId') as string
+    const { message, chatSessionId } = await request.json()
 
-    console.log('📁 File received:', file?.name, 'Size:', file?.size, 'Type:', file?.type)
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
-    }
+    console.log('💬 Chat API called:', message)
 
     // Get authenticated user
     const cookieStore = cookies()
@@ -260,200 +50,109 @@ export async function POST(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
+      console.error('❌ Auth error:', authError)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user has premium subscription
+    // Get user's subscription status from profiles table
     const { data: userData, error: userError } = await supabase
-      .from('users')
+      .from('profiles')
       .select('subscription_status')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single()
 
-    if (userError || userData.subscription_status !== 'premium') {
-      return NextResponse.json({
-        error: 'Document analysis is a premium feature. Please upgrade to access this functionality.'
+    console.log('👤 User data from profiles:', userData, userError)
+
+    // Set default values if user data not found
+    const subscriptionStatus = userData?.subscription_status || 'premium'
+    const messageCount = 0
+    const maxMessages = subscriptionStatus === 'free' ? 15 : 999999
+
+    console.log('📊 Final user data:', { subscriptionStatus, messageCount, maxMessages })
+
+    // Check message limits for free users
+    if (subscriptionStatus === 'free' && messageCount >= maxMessages) {
+      return NextResponse.json({ 
+        error: 'Message limit reached. Please upgrade to premium for unlimited messages.' 
       }, { status: 403 })
     }
 
-    console.log('✅ Premium user verified, analyzing document...')
+    // Get recent chat history for context
+    const { data: recentMessages } = await supabase
+      .from('messages')
+      .select('content, role')
+      .eq('chat_session_id', chatSessionId)
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    // Convert file to buffer for storage and processing
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    console.log('📖 Recent messages:', recentMessages?.length || 0)
 
-    // Upload file to Supabase storage (optional - continue if fails)
-    const fileName = `${Date.now()}_${file.name}`
-    const storagePath = `uploads/${user.id}/${fileName}`
+    // Prepare conversation history for OpenAI
+    const conversationHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: IMMIGRATION_LAWYER_PROMPT },
+      ...(recentMessages?.reverse().map(msg => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content
+      })) || []),
+      { role: 'user', content: message }
+    ]
 
-    console.log('📤 Uploading file to Supabase storage...')
-    try {
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('documents')
-        .upload(storagePath, buffer, {
-          contentType: file.type,
-          upsert: true // Allow overwrite to avoid conflicts
-        })
-
-      if (uploadError) {
-        console.log('❌ Storage upload error (continuing anyway):', uploadError)
-      } else {
-        console.log('✅ File uploaded to storage:', uploadData.path)
-      }
-    } catch (storageError) {
-      console.log('❌ Storage upload failed (continuing anyway):', storageError)
+    // Add context about user's subscription status for document upload prompts
+    if (subscriptionStatus === 'free') {
+      conversationHistory[0].content += `\n\nIMPORTANT: This user has a FREE account. When encouraging document uploads, mention that document analysis is a premium feature. Say something like: "Upload your form below (this is a premium feature) and I'll analyze it thoroughly" or "For detailed document analysis, you'll need to upgrade to premium, but I'm happy to answer general questions about the process."`
+    } else {
+      conversationHistory[0].content += `\n\nIMPORTANT: This user has PREMIUM access. Strongly encourage document uploads for personalized analysis since they have full access to this feature.`
     }
 
-    let analysisResult: string
+    console.log('🤖 Calling OpenAI...')
 
-    try {
-      if (file.type.startsWith('image/')) {
-        console.log('🖼️ Processing image with AI Vision...')
+    // Call OpenAI
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: conversationHistory,
+      max_tokens: 500,
+      temperature: 0.7,
+    })
 
-        const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
+    const aiResponse = completion.choices[0]?.message?.content
 
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'system',
-              content: DOCUMENT_ANALYSIS_PROMPT
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `Analyze this immigration form image "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: `data:${file.type};base64,${fileBase64}`,
-                    detail: 'high'
-                  }
-                }
-              ]
-            }
-          ],
-          max_tokens: 1000,
-          temperature: 0.3
-        })
-
-        analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-        console.log('✅ Image analysis completed')
-
-      } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file...')
-
-        // Try text extraction first
-        const extractedText = await parsePDF(buffer)
-        console.log(`📄 Extracted text: ${extractedText.length} characters`)
-
-        // Check if we got meaningful content
-        const meaningfulText = extractedText.replace(/[^\w\s]/g, '').trim()
-        
-        if (meaningfulText.length > 200) {
-          // We have enough readable text, analyze it
-          console.log('📄 Analyzing extracted text content...')
-          
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4',
-            messages: [
-              {
-                role: 'system',
-                content: DOCUMENT_ANALYSIS_PROMPT
-              },
-              {
-                role: 'user',
-                content: `Here's what I extracted from "${file.name}":
-
-${extractedText.slice(0, 7000)}
-
-Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed.`
-              }
-            ],
-            max_tokens: 1000,
-            temperature: 0.3
-          })
-
-          analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-          console.log('✅ Text-based PDF analysis completed')
-          
-        } else {
-          // PDF is encrypted/protected - ALWAYS use Sarah's AI personality
-          console.log('📄 PDF appears encrypted/protected, getting Sarah response...')
-          
-          const response = await openai.chat.completions.create({
-            model: 'gpt-4',
-            messages: [
-              {
-                role: 'system',
-                content: DOCUMENT_ANALYSIS_PROMPT
-              },
-              {
-                role: 'user',
-                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is super common with USCIS immigration forms. Give me your direct Saul Goodman-style advice on how to handle this situation. Be short and helpful.`
-              }
-            ],
-            max_tokens: 200,
-            temperature: 0.3
-          })
-
-          analysisResult = response.choices[0].message.content || "Hey! Your PDF is locked down. No worries - screenshot each page as JPG and upload those instead. Works every time. What form you working on?"
-          console.log('✅ Sarah encrypted PDF response completed')
-        }
-
-      } else {
-        return NextResponse.json({ error: 'Upload PDF or image files only.' }, { status: 400 })
-      }
-
-    } catch (aiError) {
-      console.error('AI Analysis Error:', aiError)
-      analysisResult = `Technical hiccup analyzing your document, but no worries!
-
-Tell me:
-- What immigration form are you working on?
-- What specific questions do you have?
-- What sections are giving you trouble?
-
-I can help you step by step even without the file analysis.`
+    if (!aiResponse) {
+      console.error('❌ No response from OpenAI')
+      return NextResponse.json({ error: 'No response from AI' }, { status: 500 })
     }
 
-    // Save to database
-    try {
-      await supabase.from('uploaded_files').insert({
-        user_id: user.id,
-        chat_session_id: chatSessionId,
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        storage_path: storagePath,
-        analysis_result: { analysis: analysisResult }
-      })
+    console.log('✅ AI response received')
 
-      await supabase.from('messages').insert({
-        chat_session_id: chatSessionId,
-        user_id: user.id,
-        content: analysisResult,
-        role: 'assistant',
-        ai_provider: 'openai'
-      })
+    // Save user message to database
+    await supabase.from('messages').insert({
+      chat_session_id: chatSessionId,
+      user_id: user.id,
+      content: message,
+      role: 'user'
+    })
 
-      console.log('💾 Analysis saved successfully')
-    } catch (dbError) {
-      console.log('❌ Database save error:', dbError)
-    }
+    // Save AI response to database
+    await supabase.from('messages').insert({
+      chat_session_id: chatSessionId,
+      user_id: user.id,
+      content: aiResponse,
+      role: 'assistant',
+      ai_provider: 'openai'
+    })
 
-    return NextResponse.json({
-      analysis: analysisResult,
-      success: true
+    console.log('✅ Chat completed successfully')
+
+    return NextResponse.json({ 
+      response: aiResponse,
+      messageCount: messageCount + 1,
+      maxMessages: maxMessages,
+      subscriptionStatus: subscriptionStatus
     })
 
   } catch (error) {
-    console.error('💥 Document Analysis Error:', error)
-    return NextResponse.json({
-      error: 'Something went wrong analyzing your document. Try again.',
+    console.error('❌ Chat API Error:', error)
+    return NextResponse.json({ 
+      error: 'Sorry, I encountered an error. Please try again.',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
