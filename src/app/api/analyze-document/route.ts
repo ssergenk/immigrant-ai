@@ -286,22 +286,26 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Upload file to Supabase storage
+    // Upload file to Supabase storage (optional - continue if fails)
     const fileName = `${Date.now()}_${file.name}`
     const storagePath = `uploads/${user.id}/${fileName}`
 
     console.log('📤 Uploading file to Supabase storage...')
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(storagePath, buffer, {
-        contentType: file.type,
-        upsert: false
-      })
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(storagePath, buffer, {
+          contentType: file.type,
+          upsert: true // Allow overwrite to avoid conflicts
+        })
 
-    if (uploadError) {
-      console.error('❌ Storage upload error:', uploadError)
-    } else {
-      console.log('✅ File uploaded to storage:', uploadData.path)
+      if (uploadError) {
+        console.log('❌ Storage upload error (continuing anyway):', uploadError)
+      } else {
+        console.log('✅ File uploaded to storage:', uploadData.path)
+      }
+    } catch (storageError) {
+      console.log('❌ Storage upload failed (continuing anyway):', storageError)
     }
 
     let analysisResult: string
@@ -313,7 +317,7 @@ export async function POST(request: NextRequest) {
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
         const response = await openai.chat.completions.create({
-          model: 'gpt-4-vision-preview',
+          model: 'gpt-4o',
           messages: [
             {
               role: 'system',
