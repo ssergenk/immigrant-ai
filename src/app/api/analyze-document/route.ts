@@ -33,38 +33,180 @@ RESPONSE FORMAT:
 
 CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
 
-// Better PDF parsing function
+// Enhanced PDF parsing function with multiple extraction methods
 async function parsePDF(buffer: Buffer): Promise<string> {
+  console.log('🔍 Starting enhanced PDF parsing...')
+  
   try {
-    // Try multiple PDF parsing approaches
+    // Method 1: Try pdf-parse with enhanced options
+    console.log('📄 Method 1: pdf-parse with enhanced options')
     const pdfParse = (await import('pdf-parse')).default
 
-    // Parse with options for better text extraction
     const pdfData = await pdfParse(buffer, {
-      // Normalize whitespace
-      normalizeWhitespace: false,
-      // Don't discard duplicates
-      disableCombineTextItems: false
+      normalizeWhitespace: true,
+      disableCombineTextItems: false,
+      useWorker: false,
+      verbosityLevel: 0
     })
 
-    console.log(`PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} chars`)
-
-    return pdfData.text
-  } catch (error) {
-    console.error('PDF parsing failed:', error)
-
-    // Fallback: Try to extract text as UTF-8 string
-    try {
-      const textContent = buffer.toString('utf8')
-      // Extract readable text patterns
-      const matches = textContent.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{20,}/g)
-      if (matches) {
-        return matches.join(' ').slice(0, 10000)
-      }
-    } catch (fallbackError) {
-      console.error('Fallback extraction failed:', fallbackError)
+    console.log(`Method 1 result: ${pdfData.numpages} pages, ${pdfData.text.length} chars`)
+    
+    if (pdfData.text.trim().length > 50) {
+      return pdfData.text
     }
 
+    // Method 2: Try pdf2pic + tesseract for form field extraction
+    console.log('📄 Method 2: Direct buffer analysis')
+    
+    // Try to extract form field data using pdf-lib
+    try {
+      const { PDFDocument } = await import('pdf-lib')
+      const pdfDoc = await PDFDocument.load(buffer)
+      const form = pdfDoc.getForm()
+      
+      let formData = ''
+      
+      try {
+        const fields = form.getFields()
+        console.log(`Found ${fields.length} form fields`)
+        
+        fields.forEach((field, index) => {
+          const fieldName = field.getName()
+          let fieldValue = ''
+          
+          try {
+            // Try different field types
+            if ('getText' in field) {
+              fieldValue = (field as any).getText() || ''
+            } else if ('isChecked' in field) {
+              fieldValue = (field as any).isChecked() ? 'Yes' : 'No'
+            } else if ('getSelected' in field) {
+              const selected = (field as any).getSelected()
+              fieldValue = Array.isArray(selected) ? selected.join(', ') : selected || ''
+            }
+            
+            if (fieldName && (fieldValue || fieldValue === 'No')) {
+              formData += `${fieldName}: ${fieldValue}\n`
+            }
+          } catch (fieldError) {
+            console.log(`Field ${index} (${fieldName}) extraction error:`, fieldError)
+          }
+        })
+        
+        if (formData.trim()) {
+          console.log(`✅ Extracted form data: ${formData.length} characters`)
+          return `FORM FIELDS EXTRACTED:\n\n${formData}\n\nRAW TEXT:\n${pdfData.text}`
+        }
+      } catch (formError) {
+        console.log('Form field extraction failed:', formError)
+      }
+    } catch (pdfLibError) {
+      console.log('pdf-lib loading failed:', pdfLibError)
+    }
+
+    // Method 3: Try pdfjs-dist for better text extraction
+    console.log('📄 Method 3: pdfjs-dist extraction')
+    try {
+      const pdfjsLib = await import('pdfjs-dist')
+      
+      // Set worker path
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
+      
+      const pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise
+      let fullText = ''
+      
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum)
+        const textContent = await page.getTextContent()
+        
+        const pageText = textContent.items
+          .filter((item: any) => item.str && item.str.trim())
+          .map((item: any) => item.str)
+          .join(' ')
+        
+        if (pageText.trim()) {
+          fullText += `\n--- Page ${pageNum} ---\n${pageText}`
+        }
+      }
+      
+      console.log(`Method 3 result: ${fullText.length} characters`)
+      
+      if (fullText.trim().length > 50) {
+        return fullText
+      }
+    } catch (pdfjsError) {
+      console.log('pdfjs-dist extraction failed:', pdfjsError)
+    }
+
+    // Method 4: Raw buffer analysis for embedded text
+    console.log('📄 Method 4: Raw buffer text extraction')
+    try {
+      const bufferText = buffer.toString('utf8')
+      
+      // Look for common PDF text patterns
+      const textPatterns = [
+        /\/T\s*\((.*?)\)/g,  // Text field values
+        /\/V\s*\((.*?)\)/g,  // Field values
+        /\/DA\s*\((.*?)\)/g, // Default appearance
+        /BT\s+(.*?)\s+ET/g,  // Text objects
+        /Tj\s*\[(.*?)\]/g,   // Text showing
+        /\((.*?)\)\s*Tj/g    // Simple text showing
+      ]
+      
+      let extractedText = ''
+      
+      textPatterns.forEach(pattern => {
+        let match
+        while ((match = pattern.exec(bufferText)) !== null) {
+          const text = match[1]?.trim()
+          if (text && text.length > 2 && !text.includes('\x00')) {
+            extractedText += text + ' '
+          }
+        }
+      })
+      
+      // Also try to find readable ASCII text chunks
+      const asciiMatches = bufferText.match(/[\x20-\x7E]{10,}/g)
+      if (asciiMatches) {
+        asciiMatches.forEach(match => {
+          const cleanMatch = match.trim()
+          if (cleanMatch.length > 5 && !cleanMatch.includes('obj') && !cleanMatch.includes('stream')) {
+            extractedText += cleanMatch + ' '
+          }
+        })
+      }
+      
+      console.log(`Method 4 result: ${extractedText.length} characters`)
+      
+      if (extractedText.trim().length > 50) {
+        return extractedText.trim()
+      }
+    } catch (rawError) {
+      console.log('Raw buffer extraction failed:', rawError)
+    }
+
+    // Method 5: Last resort - try to extract any readable content
+    console.log('📄 Method 5: Last resort extraction')
+    try {
+      const textContent = buffer.toString('binary')
+      const matches = textContent.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{15,}/g)
+      if (matches && matches.length > 0) {
+        const combinedText = matches.join(' ').slice(0, 10000)
+        console.log(`Method 5 result: ${combinedText.length} characters`)
+        
+        if (combinedText.trim().length > 30) {
+          return combinedText
+        }
+      }
+    } catch (lastResortError) {
+      console.log('Last resort extraction failed:', lastResortError)
+    }
+
+    console.log('❌ All extraction methods failed')
+    return ''
+
+  } catch (error) {
+    console.error('❌ Complete PDF parsing failure:', error)
     return ''
   }
 }
@@ -173,47 +315,55 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file - USING CONDITIONAL PDF PARSER...')
+        console.log('📄 Processing PDF file with enhanced parser...')
 
         try {
-          // Use conditional PDF parser that avoids build issues
-          console.log('🔍 Parsing PDF with dynamic import...')
+          console.log('🔍 Starting enhanced PDF parsing...')
           const rawPdfText = await parsePDF(buffer)
 
-          console.log(`📄 Raw extracted: ${rawPdfText.length} characters`)
+          console.log(`📄 Enhanced parser result: ${rawPdfText.length} characters`)
 
           // Clean and limit text for token management
           const cleanText = rawPdfText.trim().replace(/\s+/g, ' ')
           const limitedText = cleanText.slice(0, 7000) // ~90% of 8K tokens for GPT-4
 
-          console.log(`📄 Final text: ${limitedText.length} characters (limited for tokens)`)
-          console.log(`📄 First 300 chars: ${limitedText.substring(0, 300)}`)
+          console.log(`📄 Final text for AI: ${limitedText.length} characters`)
+          console.log(`📄 Preview: ${limitedText.substring(0, 200)}...`)
 
-          if (limitedText.trim().length < 100) {
-            analysisResult = `**📋 PDF Content Issue**
+          if (limitedText.trim().length < 30) {
+            analysisResult = `**📋 PDF Analysis Challenge**
 
-I was able to open your PDF "${file.name}" but found very little readable text (${limitedText.length} characters). This usually means:
+I processed your PDF "${file.name}" using multiple extraction methods, but I'm getting very limited readable content (${limitedText.length} characters extracted).
 
-**🔍 Possible Issues:**
-- The PDF is mostly images/scanned content without OCR text
-- It's a blank form that hasn't been filled out
-- The PDF is password-protected or corrupted
-- It's a purely visual form without embedded text
+**🔍 What I Tried:**
+- Standard PDF text extraction
+- Form field value reading
+- Advanced PDF.js parsing
+- Raw content analysis
+- Pattern-based text extraction
 
-**💡 Solutions:**
-1. **Upload as images** - Take screenshots of each page as JPG/PNG files (best option)
-2. **Use OCR first** - Run the PDF through an OCR tool to make text searchable
-3. **Use fillable PDF** - Download the official USCIS fillable version
-4. **Fill out the form first** - If it's blank, complete it before uploading
+**💡 Let's Troubleshoot:**
 
-**🖼️ Why Images Work Better:**
-For scanned documents or image-based PDFs, uploading as images gives me perfect visual access to see exactly what's filled out, signatures, dates, and formatting.
+**Option 1: Tell Me About Your Form**
+- What type of immigration form is this? (I-130, I-485, etc.)
+- What sections are you having trouble with?
+- Any specific questions about completion?
 
-**💬 What Would You Like to Do?**
-Would you prefer to upload the form as images, or tell me what specific form you're working with and what questions you have?`
+**Option 2: Try Image Upload**
+- Convert PDF pages to JPG/PNG images
+- Upload each page as an image
+- I can analyze images with 100% accuracy
+
+**Option 3: Form Details**
+- Is this a USCIS fillable PDF from their website?
+- Did you fill it out using Adobe Reader or another PDF editor?
+- Are there any password protections on the file?
+
+**💬 What Would Work Best?**
+I'm here to help you succeed with your immigration case - let's find the best way to analyze your document!`
 
           } else {
-            // Analyze the properly extracted PDF content with AI
+            // Analyze the extracted PDF content with AI
             const response = await openai.chat.completions.create({
               model: 'gpt-4',
               messages: [
@@ -223,11 +373,11 @@ Would you prefer to upload the form as images, or tell me what specific form you
                 },
                 {
                   role: 'user',
-                  content: `Here's the extracted content of the uploaded PDF "${file.name}":
+                  content: `Here's the extracted content from the uploaded PDF "${file.name}" using enhanced parsing methods:
 
 ${limitedText}
 
-Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
+Please analyze this as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
                 }
               ],
               max_tokens: 1500,
@@ -235,39 +385,34 @@ Please analyze it as Sarah Chen, immigration attorney. Based on the ACTUAL conte
             })
 
             analysisResult = response.choices[0].message.content || 'Unable to analyze extracted content'
-            console.log('✅ PDF content analysis completed successfully')
+            console.log('✅ Enhanced PDF analysis completed successfully')
           }
 
         } catch (pdfError) {
-          console.error('📄 PDF parsing error:', pdfError)
+          console.error('📄 Enhanced PDF parsing error:', pdfError)
 
-          // Fallback: Recommend image upload
-          analysisResult = `**📋 PDF Parsing Error**
+          analysisResult = `**📋 PDF Processing Error**
 
-I encountered an issue parsing your PDF file "${file.name}". This can happen with complex PDF formats, scanned documents, or encrypted files.
+I encountered a technical issue parsing your PDF file "${file.name}" even with my enhanced extraction methods.
 
-**💡 Best Solution - Upload as Images:**
+**💡 Best Solutions:**
 
-**🖼️ Convert to Images (Most Reliable)**
-1. Open your PDF file on your computer
-2. Take screenshots of each page (or use "Save as Image")
+**🖼️ Upload as Images (Most Reliable)**
+1. Open your PDF file
+2. Take screenshots of each page or "Save as Image"
 3. Upload each page as JPG/PNG files
-4. I'll analyze each page with perfect accuracy
+4. I'll analyze with perfect visual accuracy
 
-**📋 Why This Works Better:**
-- Images bypass all PDF parsing issues
-- I can see filled fields, handwriting, signatures, dates
-- Works with scanned forms, filled forms, any format
-- Gives me the same view you see on screen
+**💬 Quick Help Right Now**
+Tell me:
+- What immigration form are you working with?
+- Which sections are giving you trouble?
+- What specific questions do you have?
 
-**🔍 Alternative Help:**
-If you can't convert to images right now, tell me:
-- What type of immigration form is this?
-- What sections are you struggling with?
-- Any specific questions about completion?
+I can provide expert immigration guidance even without the file analysis!
 
-**💬 What Would You Prefer?**
-Upload as images for detailed analysis, or tell me about your specific form questions?`
+**🔍 Technical Note**
+This can happen with certain PDF formats, security settings, or complex form structures. Images bypass all these issues completely.`
         }
 
       } else {
