@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   
-  // Define your production site URL from environment variable
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || 'http://localhost:3000'
 
   if (code) {
@@ -22,25 +21,32 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${siteUrl}/?error=auth_error`)
       }
 
-      // Check if this is a new user and send welcome email
       if (data.user) {
+        console.log('🔍 Checking if user exists:', data.user.email)
+        
+        // Check if user exists in our users table
         const { data: existingUser, error: userError } = await supabase
           .from('users')
-          .select('id, email, full_name')
+          .select('id, email, full_name, created_at')
           .eq('id', data.user.id)
           .single()
 
-        // If user doesn't exist in our users table, it's a new signup
-        if (userError && userError.code === 'PGRST116') {
-          console.log('🎉 New user signup detected, sending welcome email')
+        console.log('👤 User lookup result:', { existingUser, userError })
+
+        if (!existingUser || userError) {
+          console.log('🎉 NEW USER DETECTED - Creating record and sending welcome email')
           
-          // Create user record (this might already exist from your signup flow)
+          const userName = data.user.user_metadata?.full_name || 
+                          data.user.user_metadata?.name || 
+                          data.user.email?.split('@')[0] || 'User'
+          
+          // Create user record
           const { error: insertError } = await supabase
             .from('users')
             .insert({
               id: data.user.id,
               email: data.user.email,
-              full_name: data.user.user_metadata?.full_name || data.user.user_metadata?.name || 'User',
+              full_name: userName,
               subscription_status: 'free',
               message_count: 0,
               max_messages: 15
@@ -48,11 +54,14 @@ export async function GET(request: NextRequest) {
 
           if (insertError) {
             console.error('❌ Error creating user record:', insertError)
+          } else {
+            console.log('✅ User record created successfully')
           }
 
           // Send welcome email
           if (data.user.email) {
-            const userName = data.user.user_metadata?.full_name || data.user.user_metadata?.name || 'there'
+            console.log('📧 Sending welcome email to:', data.user.email)
+            
             const welcomeEmail = emailTemplates.welcome(userName)
             
             const emailResult = await sendEmail({
@@ -62,18 +71,18 @@ export async function GET(request: NextRequest) {
             })
 
             if (emailResult.success) {
-              console.log('✅ Welcome email sent successfully')
+              console.log('✅ Welcome email sent successfully to:', data.user.email)
             } else {
               console.error('❌ Failed to send welcome email:', emailResult.error)
             }
           }
-        } else if (existingUser) {
-          console.log('👋 Existing user login:', existingUser.email)
+        } else {
+          console.log('👋 Existing user login:', existingUser.email, '(created:', existingUser.created_at, ')')
         }
       }
 
     } catch (error) {
-      console.error('Error in auth callback:', error)
+      console.error('💥 Error in auth callback:', error)
       return NextResponse.redirect(`${siteUrl}/?error=auth_error`)
     }
   }
