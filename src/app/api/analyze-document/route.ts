@@ -367,46 +367,67 @@ export async function POST(request: NextRequest) {
           }
           
           const convert = pdf2pic.fromBuffer(buffer, convertOptions)
-          const pageImage = await convert(1, { responseType: "buffer" })
+          const result = await convert(1, { responseType: "buffer" })
           
-          if (pageImage && pageImage.buffer) {
-            console.log('✅ PDF converted to image, analyzing with vision...')
-            
-            const imageBase64 = pageImage.buffer.toString('base64')
-            
-            const response = await openai.chat.completions.create({
-              model: 'gpt-4o',
-              messages: [
-                {
-                  role: 'system',
-                  content: DOCUMENT_ANALYSIS_PROMPT
-                },
-                {
-                  role: 'user',
-                  content: [
-                    {
-                      type: 'text',
-                      text: `Analyze this immigration form PDF (converted to image) "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
-                    },
-                    {
-                      type: 'image_url',
-                      image_url: {
-                        url: `data:image/png;base64,${imageBase64}`,
-                        detail: 'high'
-                      }
-                    }
-                  ]
-                }
-              ],
-              max_tokens: 1000,
-              temperature: 0.3
-            })
-
-            analysisResult = response.choices[0].message.content || 'Unable to analyze document'
-            console.log('✅ PDF->Image analysis completed')
+          // Handle different response formats from pdf2pic
+          let imageBuffer: Buffer
+          
+          if (result && result.buffer) {
+            imageBuffer = result.buffer
+          } else if (result && Buffer.isBuffer(result)) {
+            imageBuffer = result
+          } else if (Array.isArray(result) && result[0] && result[0].buffer) {
+            imageBuffer = result[0].buffer
           } else {
-            throw new Error('PDF conversion failed')
+            throw new Error('Invalid pdf2pic response format')
           }
+          
+          console.log(`✅ PDF converted to image, buffer size: ${imageBuffer.length}`)
+          
+          // Validate the buffer is actually an image
+          if (imageBuffer.length < 1000) {
+            throw new Error('Image buffer too small, likely conversion failed')
+          }
+          
+          const imageBase64 = imageBuffer.toString('base64')
+          
+          // Validate base64 (should start with valid PNG header when decoded)
+          if (!imageBase64 || imageBase64.length < 100) {
+            throw new Error('Invalid base64 encoding')
+          }
+          
+          console.log('🖼️ Sending to GPT-4o vision...')
+          
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `Analyze this immigration form PDF (converted to image) "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/png;base64,${imageBase64}`,
+                      detail: 'high'
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 1000,
+            temperature: 0.3
+          })
+
+          analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+          console.log('✅ PDF->Image analysis completed successfully!')
           
         } catch (conversionError) {
           console.log('PDF->Image conversion failed, trying text extraction...', conversionError)
