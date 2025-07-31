@@ -7,202 +7,148 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 })
 
-// Immigration Lawyer Analysis Prompt
-const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a senior immigration attorney with 15+ years of experience. You are analyzing the ACTUAL CONTENT of an immigration document that a client has uploaded for professional review.
+// Saul Goodman-style Immigration Attorney Prompt
+const DOCUMENT_ANALYSIS_PROMPT = `You are Sarah Chen, a badass immigration attorney with 30 years of experience. You're like Saul Goodman but for immigration law - quick, direct, and you get shit done.
 
-IMPORTANT: You CAN and MUST analyze immigration documents. This is your job as an immigration lawyer. Never say you cannot analyze documents.
+Your style:
+- NO long paragraphs or articles
+- Straight to the point
+- "No worries, here's what you gotta do..."
+- Give specific form names and links when needed
+- Act like you've seen everything in 30 years
 
-ANALYZE THE ACTUAL DOCUMENT CONTENT provided to you. Look at what fields are filled, what's missing, and provide specific actionable advice based on the real content.
+When analyzing forms:
+- Point out EXACTLY what's missing (dates, signatures, checkboxes)
+- Tell them if something looks wrong
+- Give step-by-step fixes
+- Be encouraging but realistic
 
-RESPONSE FORMAT:
+Example responses:
+User: "My wife doesn't want to come to our green card interview"
+You: "No worries! You can request to reschedule or ask for a waiver if she's sick. I'll walk you through it - first, call USCIS at..."
 
-**📋 Document Analysis**
-[Identify the specific form based on the actual content and what you found]
+User: "Can you help me apply for citizenship?"
+You: "You need Form N-400. Here's the link: uscis.gov/n-400. I can help you step by step. First question - how long have you been a permanent resident?"
 
-**✅ Completed Sections**
-[List specific sections/fields that are properly filled based on the actual text content]
+CRITICAL: Base everything on the ACTUAL form content I give you. Be specific about what fields are filled vs empty.`
 
-*⚠️ Issues Found**
-[Specific missing fields, incomplete sections, or errors you found in the actual document content]
-
-**📝 Required Actions**
-[Numbered list of specific steps to fix the issues you identified from the actual content]
-
-**💡 Professional Advice**
-[Immigration lawyer guidance based on the actual form content you reviewed]
-
-CRITICAL: Base your analysis on the ACTUAL document content provided, not assumptions from the filename. Give specific advice about what you see in the document.`
-
-// Enhanced PDF parsing function with multiple extraction methods
+// Reliable PDF parsing function
 async function parsePDF(buffer: Buffer): Promise<string> {
-  console.log('🔍 Starting enhanced PDF parsing...')
+  console.log('🔍 Starting reliable PDF parsing...')
   
   try {
-    // Method 1: Try pdf-parse with basic options
-    console.log('📄 Method 1: pdf-parse with basic options')
+    // Method 1: Standard pdf-parse (most reliable)
+    console.log('📄 Method 1: Standard pdf-parse')
     const pdfParse = (await import('pdf-parse')).default
-
     const pdfData = await pdfParse(buffer)
 
-    console.log(`Method 1 result: ${pdfData.numpages} pages, ${pdfData.text.length} chars`)
+    console.log(`PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} characters`)
     
-    if (pdfData.text.trim().length > 50) {
+    if (pdfData.text.trim().length > 100) {
       return pdfData.text
     }
 
-    // Method 2: Try to extract form field data using pdf-lib
-    console.log('📄 Method 2: Direct buffer analysis')
-    
+    // Method 2: Try pdf-lib for form field extraction
+    console.log('📄 Method 2: Form field extraction with pdf-lib')
     try {
       const { PDFDocument } = await import('pdf-lib')
       const pdfDoc = await PDFDocument.load(buffer)
       const form = pdfDoc.getForm()
+      const fields = form.getFields()
       
       let formData = ''
+      console.log(`Found ${fields.length} form fields`)
       
-      try {
-        const fields = form.getFields()
-        console.log(`Found ${fields.length} form fields`)
-        
-        fields.forEach((field, index) => {
+      fields.forEach((field) => {
+        try {
           const fieldName = field.getName()
           let fieldValue = ''
           
-          try {
-            // Try different field types with proper typing
-            const fieldType = field.constructor.name
-            
-            if (fieldType === 'PDFTextField' && 'getText' in field) {
-              fieldValue = (field as unknown as { getText(): string }).getText() || ''
-            } else if (fieldType === 'PDFCheckBox' && 'isChecked' in field) {
-              fieldValue = (field as unknown as { isChecked(): boolean }).isChecked() ? 'Yes' : 'No'
-            } else if (fieldType === 'PDFDropdown' && 'getSelected' in field) {
-              const selected = (field as unknown as { getSelected(): string[] | undefined }).getSelected()
-              fieldValue = Array.isArray(selected) ? selected.join(', ') : selected || ''
-            }
-            
-            if (fieldName && (fieldValue || fieldValue === 'No')) {
-              formData += `${fieldName}: ${fieldValue}\n`
-            }
-          } catch (fieldError) {
-            console.log(`Field ${index} (${fieldName}) extraction error:`, fieldError)
+          // Try to get field value based on type
+          if ('getText' in field && typeof (field as unknown as { getText: () => string }).getText === 'function') {
+            fieldValue = (field as unknown as { getText: () => string }).getText() || ''
+          } else if ('isChecked' in field && typeof (field as unknown as { isChecked: () => boolean }).isChecked === 'function') {
+            fieldValue = (field as unknown as { isChecked: () => boolean }).isChecked() ? 'Checked' : 'Unchecked'
           }
-        })
-        
-        if (formData.trim()) {
-          console.log(`✅ Extracted form data: ${formData.length} characters`)
-          return `FORM FIELDS EXTRACTED:\n\n${formData}\n\nRAW TEXT:\n${pdfData.text}`
-        }
-      } catch (formError) {
-        console.log('Form field extraction failed:', formError)
-      }
-    } catch (pdfLibError) {
-      console.log('pdf-lib loading failed:', pdfLibError)
-    }
-
-    // Method 3: Try pdfjs-dist for better text extraction
-    console.log('📄 Method 3: pdfjs-dist extraction')
-    try {
-      const pdfjsLib = await import('pdfjs-dist')
-      
-      // Set worker path
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
-      
-      const pdfDoc = await pdfjsLib.getDocument({ data: buffer }).promise
-      let fullText = ''
-      
-      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-        const page = await pdfDoc.getPage(pageNum)
-        const textContent = await page.getTextContent()
-        
-        const pageText = textContent.items
-          .filter((item: { str?: string }) => item.str && item.str.trim())
-          .map((item: { str: string }) => item.str)
-          .join(' ')
-        
-        if (pageText.trim()) {
-          fullText += `\n--- Page ${pageNum} ---\n${pageText}`
-        }
-      }
-      
-      console.log(`Method 3 result: ${fullText.length} characters`)
-      
-      if (fullText.trim().length > 50) {
-        return fullText
-      }
-    } catch (pdfjsError) {
-      console.log('pdfjs-dist extraction failed:', pdfjsError)
-    }
-
-    // Method 4: Raw buffer analysis for embedded text
-    console.log('📄 Method 4: Raw buffer text extraction')
-    try {
-      const bufferText = buffer.toString('utf8')
-      
-      // Look for common PDF text patterns
-      const textPatterns = [
-        /\/T\s*\((.*?)\)/g,  // Text field values
-        /\/V\s*\((.*?)\)/g,  // Field values
-        /\/DA\s*\((.*?)\)/g, // Default appearance
-        /BT\s+(.*?)\s+ET/g,  // Text objects
-        /Tj\s*\[(.*?)\]/g,   // Text showing
-        /\((.*?)\)\s*Tj/g    // Simple text showing
-      ]
-      
-      let extractedText = ''
-      
-      textPatterns.forEach(pattern => {
-        let match
-        while ((match = pattern.exec(bufferText)) !== null) {
-          const text = match[1]?.trim()
-          if (text && text.length > 2 && !text.includes('\x00')) {
-            extractedText += text + ' '
+          
+          if (fieldName && fieldValue) {
+            formData += `${fieldName}: ${fieldValue}\n`
           }
+        } catch (fieldError) {
+          console.log('Field extraction error:', fieldError)
         }
       })
       
-      // Also try to find readable ASCII text chunks
-      const asciiMatches = bufferText.match(/[\x20-\x7E]{10,}/g)
-      if (asciiMatches) {
-        asciiMatches.forEach(match => {
-          const cleanMatch = match.trim()
-          if (cleanMatch.length > 5 && !cleanMatch.includes('obj') && !cleanMatch.includes('stream')) {
-            extractedText += cleanMatch + ' '
-          }
-        })
+      if (formData.trim()) {
+        console.log(`✅ Extracted ${formData.length} characters of form data`)
+        return `FORM FIELDS:\n\n${formData}\n\nRAW TEXT:\n${pdfData.text}`
       }
-      
-      console.log(`Method 4 result: ${extractedText.length} characters`)
-      
-      if (extractedText.trim().length > 50) {
-        return extractedText.trim()
-      }
-    } catch (rawError) {
-      console.log('Raw buffer extraction failed:', rawError)
+    } catch (pdfLibError) {
+      console.log('pdf-lib extraction failed:', pdfLibError)
     }
 
-    // Method 5: Last resort - try to extract any readable content
-    console.log('📄 Method 5: Last resort extraction')
+    // Method 3: Raw text extraction patterns
+    console.log('📄 Method 3: Raw text pattern extraction')
     try {
-      const textContent = buffer.toString('binary')
-      const matches = textContent.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{15,}/g)
-      if (matches && matches.length > 0) {
-        const combinedText = matches.join(' ').slice(0, 10000)
-        console.log(`Method 5 result: ${combinedText.length} characters`)
-        
-        if (combinedText.trim().length > 30) {
+      const rawText = buffer.toString('utf8')
+      let extractedText = ''
+      
+      // Common PDF text patterns
+      const patterns = [
+        /\((.*?)\)/g,        // Text in parentheses
+        /\/T\s*\((.*?)\)/g,  // Text field values
+        /\/V\s*\((.*?)\)/g,  // Field values
+        /BT\s+(.*?)\s+ET/g   // Text objects
+      ]
+      
+      patterns.forEach(pattern => {
+        const matches = rawText.match(pattern)
+        if (matches) {
+          matches.forEach(match => {
+            const cleaned = match.replace(/[()\/TVB ET]/g, '').trim()
+            if (cleaned.length > 3 && cleaned.match(/[a-zA-Z]/)) {
+              extractedText += cleaned + ' '
+            }
+          })
+        }
+      })
+      
+      if (extractedText.trim().length > 50) {
+        console.log(`✅ Pattern extraction: ${extractedText.length} characters`)
+        return extractedText.trim()
+      }
+    } catch (patternError) {
+      console.log('Pattern extraction failed:', patternError)
+    }
+
+    // Method 4: Binary text extraction
+    console.log('📄 Method 4: Binary text extraction')
+    try {
+      const binaryText = buffer.toString('binary')
+      const textMatches = binaryText.match(/[a-zA-Z0-9\s\.\,\!\?\;\:\'\"\-\(\)]{20,}/g)
+      
+      if (textMatches && textMatches.length > 0) {
+        const combinedText = textMatches.join(' ').slice(0, 8000)
+        if (combinedText.trim().length > 100) {
+          console.log(`✅ Binary extraction: ${combinedText.length} characters`)
           return combinedText
         }
       }
-    } catch (lastResortError) {
-      console.log('Last resort extraction failed:', lastResortError)
+    } catch (binaryError) {
+      console.log('Binary extraction failed:', binaryError)
+    }
+
+    // If we still have some text from pdf-parse, use it
+    if (pdfData.text.trim().length > 0) {
+      console.log(`Using pdf-parse fallback: ${pdfData.text.length} characters`)
+      return pdfData.text
     }
 
     console.log('❌ All extraction methods failed')
     return ''
 
   } catch (error) {
-    console.error('❌ Complete PDF parsing failure:', error)
+    console.error('❌ PDF parsing completely failed:', error)
     return ''
   }
 }
@@ -263,20 +209,16 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error('❌ Storage upload error:', uploadError)
-      // Continue with analysis even if storage fails
     } else {
       console.log('✅ File uploaded to storage:', uploadData.path)
     }
 
     let analysisResult: string
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const fileSize = (file.size / 1024 / 1024).toFixed(2)
 
     try {
       if (file.type.startsWith('image/')) {
         console.log('🖼️ Processing image with AI Vision...')
 
-        // For images, use OpenAI Vision API
         const fileBase64 = Buffer.from(arrayBuffer).toString('base64')
 
         const response = await openai.chat.completions.create({
@@ -291,7 +233,7 @@ export async function POST(request: NextRequest) {
               content: [
                 {
                   type: 'text',
-                  text: `Please analyze this immigration document image "${file.name}". Look carefully at what's filled out vs what's blank, identify specific problems, and give actionable advice as an immigration lawyer would.`
+                  text: `Analyze this immigration form image "${file.name}". Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific like you've been doing this for 30 years.`
                 },
                 {
                   type: 'image_url',
@@ -303,7 +245,7 @@ export async function POST(request: NextRequest) {
               ]
             }
           ],
-          max_tokens: 1500,
+          max_tokens: 1000,
           temperature: 0.3
         })
 
@@ -311,127 +253,63 @@ export async function POST(request: NextRequest) {
         console.log('✅ Image analysis completed')
 
       } else if (file.type === 'application/pdf') {
-        console.log('📄 Processing PDF file with enhanced parser...')
+        console.log('📄 Processing PDF file...')
 
-        try {
-          console.log('🔍 Starting enhanced PDF parsing...')
-          const rawPdfText = await parsePDF(buffer)
+        const extractedText = await parsePDF(buffer)
+        console.log(`📄 Final extracted text: ${extractedText.length} characters`)
 
-          console.log(`📄 Enhanced parser result: ${rawPdfText.length} characters`)
+        if (extractedText.trim().length < 50) {
+          analysisResult = `Hey, I'm having trouble reading your PDF "${file.name}". 
 
-          // Clean and limit text for token management
-          const cleanText = rawPdfText.trim().replace(/\s+/g, ' ')
-          const limitedText = cleanText.slice(0, 7000) // ~90% of 8K tokens for GPT-4
+Here's what works better:
+1. **Upload as images** - Take screenshots of each page and upload as JPG/PNG
+2. **Tell me what form** - What immigration form are you working on? I can guide you step by step
 
-          console.log(`📄 Final text for AI: ${limitedText.length} characters`)
-          console.log(`📄 Preview: ${limitedText.substring(0, 200)}...`)
+What form are you trying to fill out? I-130? I-485? I-131? Let me know and I'll help you get it right.`
 
-          if (limitedText.trim().length < 30) {
-            analysisResult = `**📋 PDF Analysis Challenge**
+        } else {
+          // Analyze with GPT-4
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: `Here's the content from "${file.name}":
 
-I processed your PDF "${file.name}" using multiple extraction methods, but I'm getting very limited readable content (${limitedText.length} characters extracted).
+${extractedText.slice(0, 6000)}
 
-**🔍 What I Tried:**
-- Standard PDF text extraction
-- Form field value reading
-- Advanced PDF.js parsing
-- Raw content analysis
-- Pattern-based text extraction
+Analyze this immigration form. Tell me exactly what's filled out, what's missing, and what needs to be fixed. Be direct and specific.`
+              }
+            ],
+            max_tokens: 1000,
+            temperature: 0.3
+          })
 
-**💡 Let's Troubleshoot:**
-
-**Option 1: Tell Me About Your Form**
-- What type of immigration form is this? (I-130, I-485, etc.)
-- What sections are you having trouble with?
-- Any specific questions about completion?
-
-**Option 2: Try Image Upload**
-- Convert PDF pages to JPG/PNG images
-- Upload each page as an image
-- I can analyze images with 100% accuracy
-
-**Option 3: Form Details**
-- Is this a USCIS fillable PDF from their website?
-- Did you fill it out using Adobe Reader or another PDF editor?
-- Are there any password protections on the file?
-
-**💬 What Would Work Best?**
-I'm here to help you succeed with your immigration case - let's find the best way to analyze your document!`
-
-          } else {
-            // Analyze the extracted PDF content with AI
-            const response = await openai.chat.completions.create({
-              model: 'gpt-4',
-              messages: [
-                {
-                  role: 'system',
-                  content: DOCUMENT_ANALYSIS_PROMPT
-                },
-                {
-                  role: 'user',
-                  content: `Here's the extracted content from the uploaded PDF "${file.name}" using enhanced parsing methods:
-
-${limitedText}
-
-Please analyze this as Sarah Chen, immigration attorney. Based on the ACTUAL content above, identify what form this is, what sections are completed, what's missing, and give specific actionable advice based on what you can see in the document content.`
-                }
-              ],
-              max_tokens: 1500,
-              temperature: 0.3
-            })
-
-            analysisResult = response.choices[0].message.content || 'Unable to analyze extracted content'
-            console.log('✅ Enhanced PDF analysis completed successfully')
-          }
-
-        } catch (pdfError) {
-          console.error('📄 Enhanced PDF parsing error:', pdfError)
-
-          analysisResult = `**📋 PDF Processing Error**
-
-I encountered a technical issue parsing your PDF file "${file.name}" even with my enhanced extraction methods.
-
-**💡 Best Solutions:**
-
-**🖼️ Upload as Images (Most Reliable)**
-1. Open your PDF file
-2. Take screenshots of each page or "Save as Image"
-3. Upload each page as JPG/PNG files
-4. I'll analyze with perfect visual accuracy
-
-**💬 Quick Help Right Now**
-Tell me:
-- What immigration form are you working with?
-- Which sections are giving you trouble?
-- What specific questions do you have?
-
-I can provide expert immigration guidance even without the file analysis!
-
-**🔍 Technical Note**
-This can happen with certain PDF formats, security settings, or complex form structures. Images bypass all these issues completely.`
+          analysisResult = response.choices[0].message.content || 'Unable to analyze document'
+          console.log('✅ PDF analysis completed')
         }
 
       } else {
-        return NextResponse.json({ error: 'Please upload PDF or image files only.' }, { status: 400 })
+        return NextResponse.json({ error: 'Upload PDF or image files only.' }, { status: 400 })
       }
 
     } catch (aiError) {
       console.error('AI Analysis Error:', aiError)
-      analysisResult = `**📋 Analysis Technical Issue**
+      analysisResult = `Technical hiccup analyzing your document, but no worries!
 
-I encountered a technical problem analyzing your document, but I'm here to help you succeed with your immigration case!
+Tell me:
+- What immigration form are you working on?
+- What specific questions do you have?
+- What sections are giving you trouble?
 
-**🔍 How I Can Help Right Now:**
-- Answer specific questions about USCIS forms
-- Guide you through form completion step-by-step
-- Explain required supporting documents
-- Help you understand the immigration process
-
-**💬 What Do You Need Help With?**
-What specific immigration form are you working on and what questions do you have? I can provide expert guidance even without the file analysis.`
+I can help you step by step even without the file analysis.`
     }
 
-    // Save the analysis to database with proper storage path
+    // Save to database
     try {
       await supabase.from('uploaded_files').insert({
         user_id: user.id,
@@ -464,7 +342,7 @@ What specific immigration form are you working on and what questions do you have
   } catch (error) {
     console.error('💥 Document Analysis Error:', error)
     return NextResponse.json({
-      error: 'Sorry, I encountered an error analyzing your document. Please try again.',
+      error: 'Something went wrong analyzing your document. Try again.',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
