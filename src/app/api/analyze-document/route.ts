@@ -385,25 +385,33 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
           console.log('✅ Text-based PDF analysis completed')
           
         } else {
-          // PDF is encrypted/protected - give clear guidance
+          // PDF is encrypted/protected - give clear guidance with Sarah's style
           console.log('📄 PDF appears encrypted/protected, providing guidance')
           
-          analysisResult = `Hey! Your PDF "${file.name}" is encrypted or protected (super common with USCIS forms).
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+              {
+                role: 'system',
+                content: DOCUMENT_ANALYSIS_PROMPT
+              },
+              {
+                role: 'user',
+                content: `The PDF "${file.name}" is encrypted/protected and I can't extract readable text from it. This is super common with USCIS forms. Give me your direct, no-nonsense advice on how to handle this situation.`
+              }
+            ],
+            max_tokens: 300,
+            temperature: 0.3
+          })
 
-**Quick fix - works 100% of the time:**
+          analysisResult = response.choices[0].message.content || `Hey! Your PDF "${file.name}" is encrypted (super common with USCIS forms).
 
-1. **Open your PDF** on your computer
-2. **Take screenshots** of each page as JPG/PNG 
-3. **Upload the images** - I can read them perfectly!
+**Quick fix:**
+1. Take screenshots of each page as JPG/PNG 
+2. Upload the images - I can read them perfectly!
 
-**OR just tell me:**
-- What immigration form is this? (I-130, I-485, I-131, etc.)
-- What sections are you struggling with?
-- Any specific questions?
-
-I've been doing this for 30 years - I can guide you step by step even without seeing the form!
-
-What form are you working on?`
+**OR tell me:**
+What immigration form is this? I can guide you step by step.`
         }
 
       } else {
