@@ -37,6 +37,7 @@ function ChatContent() {
   const [isClearingChat, setIsClearingChat] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
+  const [viewportHeight, setViewportHeight] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileUploadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -45,33 +46,40 @@ function ChatContent() {
   // Language support
   const { currentLanguage, setLanguage } = useLanguage()
 
-  // Handle mobile keyboard visibility
+  // Enhanced mobile keyboard detection
   useEffect(() => {
-    const handleResize = () => {
+    const handleViewportChange = () => {
       if (typeof window !== 'undefined') {
-        const isKeyboard = window.visualViewport ? window.visualViewport.height < window.innerHeight * 0.75 : false
+        const windowHeight = window.innerHeight
+        const visualViewportHeight = window.visualViewport?.height || windowHeight
+        
+        setViewportHeight(visualViewportHeight)
+        
+        // More accurate keyboard detection - keyboard is open if viewport shrinks significantly
+        const keyboardThreshold = windowHeight * 0.75
+        const isKeyboard = visualViewportHeight < keyboardThreshold
         setIsKeyboardOpen(isKeyboard)
       }
     }
 
-    const handleVisualViewportChange = () => {
-      if (window.visualViewport) {
-        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.75
-        setIsKeyboardOpen(isKeyboard)
-      }
-    }
+    // Initial setup
+    handleViewportChange()
 
+    // Listen to visual viewport changes (better than resize)
     if (typeof window !== 'undefined' && window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleVisualViewportChange)
+      window.visualViewport.addEventListener('resize', handleViewportChange)
+      window.visualViewport.addEventListener('scroll', handleViewportChange)
     }
 
-    window.addEventListener('resize', handleResize)
+    // Fallback for browsers without visual viewport API
+    window.addEventListener('resize', handleViewportChange)
 
     return () => {
       if (typeof window !== 'undefined' && window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleVisualViewportChange)
+        window.visualViewport.removeEventListener('resize', handleViewportChange)
+        window.visualViewport.removeEventListener('scroll', handleViewportChange)
       }
-      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('resize', handleViewportChange)
     }
   }, [])
 
@@ -397,12 +405,18 @@ function ChatContent() {
   const isAtLimit = userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages
   const isPremium = userData?.subscription_status === 'premium'
 
+  // Dynamic height calculation
+  const containerHeight = isKeyboardOpen && viewportHeight > 0 
+    ? `${viewportHeight}px` 
+    : '100dvh'
+
   return (
     <main 
       className="bg-gray-900 text-white overflow-hidden"
       style={{
-        height: isKeyboardOpen ? '100vh' : '100dvh',
-        minHeight: isKeyboardOpen ? '100vh' : '100dvh'
+        height: containerHeight,
+        minHeight: containerHeight,
+        maxHeight: containerHeight
       }}
     >
       {/* Animated Background - Same as Homepage */}
