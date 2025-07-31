@@ -36,50 +36,43 @@ function ChatContent() {
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [isClearingChat, setIsClearingChat] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
-  const [viewportHeight, setViewportHeight] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileUploadRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const mainContainerRef = useRef<HTMLDivElement>(null)
   const supabase = createSupabaseClient()
 
   // Language support
   const { currentLanguage, setLanguage } = useLanguage()
 
-  // Enhanced mobile keyboard detection
+  // Handle mobile viewport and prevent zoom
   useEffect(() => {
-    const handleViewportChange = () => {
-      if (typeof window !== 'undefined') {
-        const windowHeight = window.innerHeight
-        const visualViewportHeight = window.visualViewport?.height || windowHeight
-        
-        setViewportHeight(visualViewportHeight)
-        
-        // More accurate keyboard detection - keyboard is open if viewport shrinks significantly
-        const keyboardThreshold = windowHeight * 0.75
-        const isKeyboard = visualViewportHeight < keyboardThreshold
-        setIsKeyboardOpen(isKeyboard)
+    // Prevent zoom on input focus for mobile
+    const preventZoom = (e: Event) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        document.querySelector('meta[name="viewport"]')?.setAttribute(
+          'content',
+          'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'
+        )
       }
     }
 
-    // Initial setup
-    handleViewportChange()
-
-    // Listen to visual viewport changes (better than resize)
-    if (typeof window !== 'undefined' && window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleViewportChange)
-      window.visualViewport.addEventListener('scroll', handleViewportChange)
+    const restoreZoom = () => {
+      setTimeout(() => {
+        document.querySelector('meta[name="viewport"]')?.setAttribute(
+          'content',
+          'width=device-width, initial-scale=1.0'
+        )
+      }, 300)
     }
 
-    // Fallback for browsers without visual viewport API
-    window.addEventListener('resize', handleViewportChange)
+    document.addEventListener('focusin', preventZoom)
+    document.addEventListener('focusout', restoreZoom)
 
     return () => {
-      if (typeof window !== 'undefined' && window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleViewportChange)
-        window.visualViewport.removeEventListener('scroll', handleViewportChange)
-      }
-      window.removeEventListener('resize', handleViewportChange)
+      document.removeEventListener('focusin', preventZoom)
+      document.removeEventListener('focusout', restoreZoom)
     }
   }, [])
 
@@ -392,7 +385,7 @@ function ChatContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-white text-xl">Loading your chat...</div>
       </div>
     )
@@ -405,19 +398,10 @@ function ChatContent() {
   const isAtLimit = userData?.subscription_status === 'free' && userData.message_count >= userData.max_messages
   const isPremium = userData?.subscription_status === 'premium'
 
-  // Dynamic height calculation
-  const containerHeight = isKeyboardOpen && viewportHeight > 0 
-    ? `${viewportHeight}px` 
-    : '100dvh'
-
   return (
-    <main 
-      className="bg-gray-900 text-white overflow-hidden"
-      style={{
-        height: containerHeight,
-        minHeight: containerHeight,
-        maxHeight: containerHeight
-      }}
+    <div 
+      ref={mainContainerRef}
+      className="h-screen w-full bg-gray-900 text-white overflow-hidden flex flex-col"
     >
       {/* Animated Background - Same as Homepage */}
       <div className="fixed inset-0 z-0">
@@ -571,149 +555,155 @@ function ChatContent() {
           </div>
         )}
 
-        {/* Chat Container */}
-        <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full min-h-0">
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
-            {messages.length === 0 && (
-              <div className="text-center py-8 md:py-16">
-                <div className="bg-gradient-to-r from-blue-500 to-purple-600 w-16 h-16 md:w-20 md:h-20 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg">
-                  <img 
-                    src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
-                    alt="ImmigrantAI" 
-                    className="w-8 h-8 md:w-10 md:h-10 object-contain"
-                  />
-                </div>
-                <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
-                  Welcome to ImmigrantAI
-                </h2>
-                <p className="text-gray-300 max-w-md mx-auto mb-6 text-sm md:text-base leading-relaxed">
-                  Your AI-powered immigration assistant is ready to help. Ask me anything about visas, green cards, citizenship, or any immigration concerns you have.
-                </p>
-                {isPremium && (
-                  <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-xl p-4 md:p-6 max-w-lg mx-auto">
-                    <p className="text-yellow-400 font-semibold mb-2 flex items-center justify-center gap-2">
-                      <Crown className="w-5 h-5" />
-                      Premium Features Active
-                    </p>
-                    <p className="text-gray-300 text-sm leading-relaxed">
-                      • Unlimited conversations • Document analysis • Priority support • Multi-language support
-                    </p>
+        {/* Chat Container - Fixed Height Layout */}
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Messages Area - Scrollable */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-6xl mx-auto w-full p-4 md:p-6 space-y-4 md:space-y-6">
+              {messages.length === 0 && (
+                <div className="text-center py-8 md:py-16">
+                  <div className="bg-gradient-to-r from-blue-500 to-purple-600 w-16 h-16 md:w-20 md:h-20 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg">
+                    <img 
+                      src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" 
+                      alt="ImmigrantAI" 
+                      className="w-8 h-8 md:w-10 md:h-10 object-contain"
+                    />
                   </div>
-                )}
-              </div>
-            )}
+                  <h2 className="text-xl md:text-2xl font-bold text-white mb-4">
+                    Welcome to ImmigrantAI
+                  </h2>
+                  <p className="text-gray-300 max-w-md mx-auto mb-6 text-sm md:text-base leading-relaxed">
+                    Your AI-powered immigration assistant is ready to help. Ask me anything about visas, green cards, citizenship, or any immigration concerns you have.
+                  </p>
+                  {isPremium && (
+                    <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-xl p-4 md:p-6 max-w-lg mx-auto">
+                      <p className="text-yellow-400 font-semibold mb-2 flex items-center justify-center gap-2">
+                        <Crown className="w-5 h-5" />
+                        Premium Features Active
+                      </p>
+                      <p className="text-gray-300 text-sm leading-relaxed">
+                        • Unlimited conversations • Document analysis • Priority support • Multi-language support
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
-              >
+              {messages.map((message) => (
                 <div
-                  className={`max-w-[85%] md:max-w-2xl px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg ${
-                    message.role === 'user'
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
-                      : 'bg-gray-800/80 backdrop-blur-sm text-gray-100 border border-gray-700/50'
-                  }`}
+                  key={message.id}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}
                 >
-                  <div className="whitespace-pre-wrap text-sm md:text-base leading-relaxed">{message.content}</div>
-                </div>
-              </div>
-            ))}
-
-            {isTyping && (
-              <div className="flex justify-start animate-fade-in">
-                <div className="bg-gray-800/80 backdrop-blur-sm border border-gray-700/50 max-w-xs px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                  <div
+                    className={`max-w-[85%] md:max-w-2xl px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg ${
+                      message.role === 'user'
+                        ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'
+                        : 'bg-gray-800/80 backdrop-blur-sm text-gray-100 border border-gray-700/50'
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap text-sm md:text-base leading-relaxed">{message.content}</div>
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
 
-            <div ref={messagesEndRef} />
+              {isTyping && (
+                <div className="flex justify-start animate-fade-in">
+                  <div className="bg-gray-800/80 backdrop-blur-sm border border-gray-700/50 max-w-xs px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-lg">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* File Upload Section */}
           {showFileUpload && (
-            <div ref={fileUploadRef} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 md:p-6 flex-shrink-0">
-              <FileUpload
-                onFileUpload={handleFileUpload}
-                isUploading={isUploading}
-                disabled={!isPremium}
-                onUpgradeClick={() => setShowUpgradeModal(true)}
-              />
+            <div ref={fileUploadRef} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm flex-shrink-0">
+              <div className="max-w-6xl mx-auto w-full p-4 md:p-6">
+                <FileUpload
+                  onFileUpload={handleFileUpload}
+                  isUploading={isUploading}
+                  disabled={!isPremium}
+                  onUpgradeClick={() => setShowUpgradeModal(true)}
+                />
+              </div>
             </div>
           )}
 
-          {/* Input Area */}
-          <div className="border-t border-gray-800/50 bg-gray-900/80 backdrop-blur-sm p-4 md:p-6 flex-shrink-0">
-            <div className="flex gap-2 md:gap-3 mb-3 md:mb-4">
-              <textarea
-                ref={inputRef}
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder={isAtLimit ? "Upgrade to premium to continue chatting..." : "Ask your immigration question..."}
-                className="flex-1 bg-gray-800/80 backdrop-blur-sm text-white border border-gray-600/50 rounded-xl px-4 md:px-6 py-3 md:py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-50 text-sm md:text-base"
-                rows={1}
-                disabled={isTyping || isAtLimit}
-                style={{ maxHeight: '120px' }}
-              />
-              <button
-                onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
-                disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white px-4 md:px-6 py-3 md:py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center gap-2 flex-shrink-0"
-              >
-                <Send className="w-4 h-4 md:w-5 md:h-5" />
-                <span className="hidden sm:inline">{isAtLimit ? 'Upgrade' : 'Send'}</span>
-              </button>
-            </div>
-
-            {/* Bottom Controls */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 md:gap-3">
+          {/* Input Area - Fixed at Bottom */}
+          <div className="border-t border-gray-800/50 bg-gray-900/80 backdrop-blur-sm flex-shrink-0">
+            <div className="max-w-6xl mx-auto w-full p-4 md:p-6">
+              <div className="flex gap-2 md:gap-3 mb-3 md:mb-4">
+                <textarea
+                  ref={inputRef}
+                  value={inputMessage}
+                  onChange={(e) => setInputMessage(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder={isAtLimit ? "Upgrade to premium to continue chatting..." : "Ask your immigration question..."}
+                  className="flex-1 bg-gray-800/80 backdrop-blur-sm text-white border border-gray-600/50 rounded-xl px-4 md:px-6 py-3 md:py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-50 text-sm md:text-base"
+                  rows={1}
+                  disabled={isTyping || isAtLimit}
+                  style={{ maxHeight: '120px' }}
+                />
                 <button
-                  onClick={() => setShowFileUpload(!showFileUpload)}
-                  disabled={isUploading}
-                  className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm transition-all duration-300 ${
-                    isPremium
-                      ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white hover:scale-105'
-                      : 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
-                  }`}
+                  onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
+                  disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
+                  className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white px-4 md:px-6 py-3 md:py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center gap-2 flex-shrink-0"
                 >
-                  {isUploading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span className="hidden sm:inline">Analyzing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-4 h-4" />
-                      <span className="hidden sm:inline">{showFileUpload ? 'Hide Upload' : 'Upload Document'}</span>
-                      {!isPremium && <Crown className="w-3 h-3" />}
-                    </>
-                  )}
+                  <Send className="w-4 h-4 md:w-5 md:h-5" />
+                  <span className="hidden sm:inline">{isAtLimit ? 'Upgrade' : 'Send'}</span>
                 </button>
-
-                {!isPremium && (
-                  <button
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="text-yellow-400 hover:text-yellow-300 text-xs underline"
-                  >
-                    Premium Feature
-                  </button>
-                )}
               </div>
 
-              {/* Desktop Only Instructions */}
-              <div className="hidden lg:block text-xs text-gray-500">
-                {isAtLimit ?
-                  'Upgrade to premium for unlimited messaging' :
-                  'Press Enter to send • Shift+Enter for new line'
-                }
+              {/* Bottom Controls */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 md:gap-3">
+                  <button
+                    onClick={() => setShowFileUpload(!showFileUpload)}
+                    disabled={isUploading}
+                    className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg text-xs md:text-sm transition-all duration-300 ${
+                      isPremium
+                        ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white hover:scale-105'
+                        : 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {isUploading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span className="hidden sm:inline">Analyzing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        <span className="hidden sm:inline">{showFileUpload ? 'Hide Upload' : 'Upload Document'}</span>
+                        {!isPremium && <Crown className="w-3 h-3" />}
+                      </>
+                    )}
+                  </button>
+
+                  {!isPremium && (
+                    <button
+                      onClick={() => setShowUpgradeModal(true)}
+                      className="text-yellow-400 hover:text-yellow-300 text-xs underline"
+                    >
+                      Premium Feature
+                    </button>
+                  )}
+                </div>
+
+                {/* Desktop Only Instructions */}
+                <div className="hidden lg:block text-xs text-gray-500">
+                  {isAtLimit ?
+                    'Upgrade to premium for unlimited messaging' :
+                    'Press Enter to send • Shift+Enter for new line'
+                  }
+                </div>
               </div>
             </div>
           </div>
@@ -737,8 +727,26 @@ function ChatContent() {
         .animate-fade-in {
           animation: fade-in 0.3s ease-out;
         }
+        
+        /* Prevent zoom on mobile inputs */
+        @media screen and (max-width: 768px) {
+          input[type="text"],
+          input[type="email"],
+          input[type="number"],
+          textarea {
+            font-size: 16px !important;
+          }
+        }
+        
+        /* Mobile keyboard handling */
+        @supports (-webkit-touch-callout: none) {
+          .mobile-keyboard-fix {
+            height: 100vh;
+            height: -webkit-fill-available;
+          }
+        }
       `}</style>
-    </main>
+    </div>
   )
 }
 
