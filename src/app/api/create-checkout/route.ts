@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   console.log('DEBUG_ENV: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:', process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ? 'Set' : 'Not Set');
   console.log('DEBUG_ENV: STRIPE_SECRET_KEY (first 5 chars):', process.env.STRIPE_SECRET_KEY ? process.env.STRIPE_SECRET_KEY.substring(0, 5) : 'Not Set');
   console.log('DEBUG_ENV: STRIPE_PREMIUM_PRICE_ID:', process.env.STRIPE_PREMIUM_PRICE_ID); // THIS ONE IS CRITICAL
-  console.log('DEBUG_ENV: STRIPE_WEBHOOK_SECRET (first 5 chars):', process.env.STRIPE_WEBHOOK_SECRET ? process.env.STRIPE_WEBHOOK_SECRET.substring(0, 5) : 'Not Set');
+  console.log('DEBUG_ENV: STRIPE_WEBHOOK_SECRET (first 5 chars):', process.env.STRIPE_WEBHOOK_SECRET ? process.env.STRIPE_WEBHOOK_SECRET.substring(0, 0) : 'Not Set'); // Corrected substring to 0,0 for webhook secret
   // 🛑🛑🛑 END OF DEBUG LOGS 🛑🛑🛑
 
   try {
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       customer_email: user.email || undefined,
       line_items: [
         {
-          price: process.env.STRIPE_PREMIUM_PROD_ID!, // Ensure this matches your Vercel env var name
+          price: process.env.STRIPE_PREMIUM_PRICE_ID!, // <-- CORRECTED THIS LINE!
           quantity: 1,
         },
       ],
