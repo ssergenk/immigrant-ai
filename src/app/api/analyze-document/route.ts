@@ -38,16 +38,11 @@ async function parsePDF(buffer: Buffer): Promise<string> {
   console.log('🔍 Starting enhanced PDF parsing...')
   
   try {
-    // Method 1: Try pdf-parse with enhanced options
-    console.log('📄 Method 1: pdf-parse with enhanced options')
+    // Method 1: Try pdf-parse with basic options
+    console.log('📄 Method 1: pdf-parse with basic options')
     const pdfParse = (await import('pdf-parse')).default
 
-    const pdfData = await pdfParse(buffer, {
-      normalizeWhitespace: true,
-      disableCombineTextItems: false,
-      useWorker: false,
-      verbosityLevel: 0
-    })
+    const pdfData = await pdfParse(buffer)
 
     console.log(`Method 1 result: ${pdfData.numpages} pages, ${pdfData.text.length} chars`)
     
