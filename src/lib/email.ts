@@ -32,8 +32,8 @@ export const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
         <!-- Header with Logo -->
-        <div style="text-align: center; padding: 40px 20px; background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);">
-          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 100px; margin-bottom: 15px;">
+        <div style="text-align: center; padding: 50px 20px; background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);">
+          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 150px; margin-bottom: 20px;">
           <h1 style="color: #ffffff; margin: 0; font-size: 32px; font-weight: bold;">Welcome to ImmigrantAI!</h1>
         </div>
         
@@ -92,8 +92,8 @@ export const emailTemplates = {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
         <!-- Header with Logo -->
-        <div style="text-align: center; padding: 40px 20px; background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);">
-          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 100px; margin-bottom: 15px;">
+        <div style="text-align: center; padding: 50px 20px; background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);">
+          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 150px; margin-bottom: 20px;">
           <h1 style="color: white; margin: 0; font-size: 32px; font-weight: bold;">Premium Activated!</h1>
         </div>
         
@@ -140,7 +140,7 @@ export const emailTemplates = {
         </div>
         
         <!-- Footer -->
-        <div style="background: #f8fafc; padding: 25px 20px; text-text-align: center; border-top: 1px solid #e5e7eb;">
+        <div style="background: #f8fafc; padding: 25px 20px; text-align: center; border-top: 1px solid #e5e7eb;">
           <p style="color: #6b7280; font-size: 14px; margin: 0;">Questions? Reply to this email or visit our <a href="https://myimmigrationai.com" style="color: #065f46;">support center</a>.</p>
           <p style="color: #9ca3af; font-size: 12px; margin: 10px 0 0 0;">© 2025 ImmigrantAI. All rights reserved.</p>
         </div>
@@ -152,10 +152,10 @@ export const emailTemplates = {
     subject: 'Payment Receipt - ImmigrantAI Premium Subscription',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-        <!-- Header with Logo -->
-        <div style="text-align: center; padding: 40px 20px; background: linear-gradient(135df, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);">
-          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 100px; margin-bottom: 15px;">
-          <h1 style="color: white; margin: 0; font-size: 32px; font-weight: bold;">Payment Confirmation</h1>
+        <!-- Header with Logo - FIXED BACKGROUND COLOR -->
+        <div style="text-align: center; padding: 50px 20px; background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);">
+          <img src="https://rushrcville.com/wp-content/uploads/2025/04/AI-LOGO-TRANSP.png" alt="ImmigrantAI" style="height: 150px; margin-bottom: 20px;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 32px; font-weight: bold;">Payment Confirmation</h1>
         </div>
         
         <!-- Main Content -->
