@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { sendEmail, emailTemplates } from '@/lib/email'
 
 // Define the type for the data you're updating in the 'subscriptions' table
 type SubscriptionUpdate = {
@@ -60,6 +61,13 @@ export async function POST(request: NextRequest) {
 
           console.log('👤 Upgrading user to premium:', userId);
 
+          // Get user details for email
+          const { data: userData, error: userFetchError } = await supabase
+            .from('users')
+            .select('email, full_name')
+            .eq('id', userId)
+            .single();
+
           // Update user to premium status
           const { error: updateError } = await supabase
             .from('users')
@@ -90,6 +98,63 @@ export async function POST(request: NextRequest) {
             console.error('❌ Error saving subscription:', subError);
           } else {
             console.log('✅ Subscription record saved');
+          }
+
+          // Send subscription confirmation email
+          if (userData && userData.email && !userFetchError) {
+            const userName = userData.full_name || 'there';
+            const confirmationEmail = emailTemplates.subscriptionConfirmed(userName);
+            
+            const emailResult = await sendEmail({
+              to: userData.email,
+              subject: confirmationEmail.subject,
+              html: confirmationEmail.html
+            });
+
+            if (emailResult.success) {
+              console.log('✅ Subscription confirmation email sent');
+            } else {
+              console.error('❌ Failed to send confirmation email:', emailResult.error);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        console.log('💳 Payment succeeded for invoice:', invoice.id);
+
+        // Get customer details
+        const customer = await stripe.customers.retrieve(invoice.customer as string);
+        
+        if (customer && !customer.deleted && customer.email) {
+          // Find user by customer ID
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('full_name')
+            .eq('stripe_customer_id', invoice.customer as string)
+            .single();
+
+          const userName = userData?.full_name || 'there';
+          const amount = (invoice.amount_paid / 100).toString(); // Convert cents to dollars
+          
+          const receiptEmail = emailTemplates.paymentReceipt(
+            userName, 
+            amount, 
+            invoice.hosted_invoice_url || undefined
+          );
+          
+          const emailResult = await sendEmail({
+            to: customer.email,
+            subject: receiptEmail.subject,
+            html: receiptEmail.html
+          });
+
+          if (emailResult.success) {
+            console.log('✅ Payment receipt email sent');
+          } else {
+            console.error('❌ Failed to send receipt email:', emailResult.error);
           }
         }
         break;
@@ -134,7 +199,6 @@ export async function POST(request: NextRequest) {
         };
 
         // Access current_period_start and current_period_end from the first subscription item
-        // Ensure that subscription.items.data exists and has at least one item
         if (subscription.items && subscription.items.data && subscription.items.data.length > 0) {
           const firstSubscriptionItem = subscription.items.data[0];
 
@@ -146,7 +210,7 @@ export async function POST(request: NextRequest) {
             updateData.current_period_end = new Date(firstSubscriptionItem.current_period_end * 1000).toISOString();
           }
         } else {
-            console.warn('⚠️ No subscription items found for updated subscription:', subscription.id);
+          console.warn('⚠️ No subscription items found for updated subscription:', subscription.id);
         }
 
         await supabase
