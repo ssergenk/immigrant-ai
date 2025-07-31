@@ -47,14 +47,21 @@ async function parsePDF(buffer: Buffer): Promise<string> {
   try {
     // Method 1: Standard pdf-parse with detailed logging
     console.log('📄 Method 1: Standard pdf-parse')
-    const pdfParse = (await import('pdf-parse')).default
-    const pdfData = await pdfParse(buffer)
+    try {
+      const pdfParse = (await import('pdf-parse')).default
+      const pdfData = await pdfParse(buffer, {
+        max: 0 // Disable page limit to avoid test file issues
+      })
 
-    console.log(`PDF Info - Pages: ${pdfData.numpages}, Text Length: ${pdfData.text.length}`)
-    console.log(`First 500 chars of text: "${pdfData.text.substring(0, 500)}"`)
-    
-    if (pdfData.text.trim().length > 20) {
-      extractedContent += `PDF-PARSE CONTENT:\n${pdfData.text}\n\n`
+      console.log(`PDF Info - Pages: ${pdfData.numpages}, Text Length: ${pdfData.text.length}`)
+      console.log(`First 500 chars of text: "${pdfData.text.substring(0, 500)}"`)
+      
+      if (pdfData.text.trim().length > 20) {
+        extractedContent += `PDF-PARSE CONTENT:\n${pdfData.text}\n\n`
+      }
+    } catch (pdfParseError) {
+      console.log('pdf-parse failed:', pdfParseError)
+      extractedContent += `PDF-PARSE FAILED: ${pdfParseError}\n\n`
     }
 
     // Method 2: pdf-lib form field extraction with extensive logging
