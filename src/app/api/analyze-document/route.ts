@@ -55,10 +55,9 @@ async function parsePDF(buffer: Buffer): Promise<string> {
       return pdfData.text
     }
 
-    // Method 2: Try pdf2pic + tesseract for form field extraction
+    // Method 2: Try to extract form field data using pdf-lib
     console.log('📄 Method 2: Direct buffer analysis')
     
-    // Try to extract form field data using pdf-lib
     try {
       const { PDFDocument } = await import('pdf-lib')
       const pdfDoc = await PDFDocument.load(buffer)
@@ -75,13 +74,15 @@ async function parsePDF(buffer: Buffer): Promise<string> {
           let fieldValue = ''
           
           try {
-            // Try different field types
-            if ('getText' in field) {
-              fieldValue = (field as any).getText() || ''
-            } else if ('isChecked' in field) {
-              fieldValue = (field as any).isChecked() ? 'Yes' : 'No'
-            } else if ('getSelected' in field) {
-              const selected = (field as any).getSelected()
+            // Try different field types with proper typing
+            const fieldType = field.constructor.name
+            
+            if (fieldType === 'PDFTextField' && 'getText' in field) {
+              fieldValue = (field as unknown as { getText(): string }).getText() || ''
+            } else if (fieldType === 'PDFCheckBox' && 'isChecked' in field) {
+              fieldValue = (field as unknown as { isChecked(): boolean }).isChecked() ? 'Yes' : 'No'
+            } else if (fieldType === 'PDFDropdown' && 'getSelected' in field) {
+              const selected = (field as unknown as { getSelected(): string[] | undefined }).getSelected()
               fieldValue = Array.isArray(selected) ? selected.join(', ') : selected || ''
             }
             
@@ -120,8 +121,8 @@ async function parsePDF(buffer: Buffer): Promise<string> {
         const textContent = await page.getTextContent()
         
         const pageText = textContent.items
-          .filter((item: any) => item.str && item.str.trim())
-          .map((item: any) => item.str)
+          .filter((item: { str?: string }) => item.str && item.str.trim())
+          .map((item: { str: string }) => item.str)
           .join(' ')
         
         if (pageText.trim()) {
