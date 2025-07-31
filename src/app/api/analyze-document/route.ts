@@ -32,6 +32,13 @@ You: "You need Form N-400. Here's the link: uscis.gov/n-400. I can help you step
 
 CRITICAL: Base everything on the ACTUAL form content I give you. Be specific about what fields are filled vs empty.`
 
+// Interface for better typing
+interface PDFField {
+  name: string;
+  value: string;
+  type: string;
+}
+
 // Super aggressive PDF parsing function
 async function parsePDF(buffer: Buffer): Promise<string> {
   console.log('🔍 Starting AGGRESSIVE PDF parsing...')
@@ -69,6 +76,7 @@ async function parsePDF(buffer: Buffer): Promise<string> {
       console.log(`Found ${fields.length} form fields`)
       
       let formFieldsText = ''
+      const processedFields: PDFField[] = []
       
       fields.forEach((field, index) => {
         try {
@@ -79,33 +87,34 @@ async function parsePDF(buffer: Buffer): Promise<string> {
           
           let fieldValue = ''
           
-          // Handle different field types
+          // Handle different field types with proper error handling
           if (fieldType.includes('TextField')) {
             try {
-              const textField = field as any
+              const textField = field as unknown as { getText(): string }
               fieldValue = textField.getText ? textField.getText() : 'NO_TEXT_METHOD'
-            } catch (e) {
+            } catch {
               fieldValue = 'TEXT_FIELD_ERROR'
             }
           } else if (fieldType.includes('CheckBox')) {
             try {
-              const checkField = field as any
+              const checkField = field as unknown as { isChecked(): boolean }
               fieldValue = checkField.isChecked ? (checkField.isChecked() ? 'CHECKED' : 'UNCHECKED') : 'NO_CHECKED_METHOD'
-            } catch (e) {
+            } catch {
               fieldValue = 'CHECKBOX_ERROR'
             }
           } else if (fieldType.includes('Dropdown')) {
             try {
-              const dropdownField = field as any
+              const dropdownField = field as unknown as { getSelected(): string[] | undefined }
               const selected = dropdownField.getSelected ? dropdownField.getSelected() : null
               fieldValue = selected ? JSON.stringify(selected) : 'NO_SELECTION'
-            } catch (e) {
+            } catch {
               fieldValue = 'DROPDOWN_ERROR'
             }
           } else {
             fieldValue = `UNKNOWN_TYPE_${fieldType}`
           }
           
+          processedFields.push({ name: fieldName, value: fieldValue, type: fieldType })
           formFieldsText += `${fieldName}: ${fieldValue}\n`
           console.log(`  Value: ${fieldValue}`)
           
@@ -128,11 +137,11 @@ async function parsePDF(buffer: Buffer): Promise<string> {
     console.log('📄 Method 3: Raw buffer analysis')
     
     // Try different encodings
-    const encodings = ['utf8', 'ascii', 'latin1', 'binary']
+    const encodings: BufferEncoding[] = ['utf8', 'ascii', 'latin1', 'binary']
     
     encodings.forEach(encoding => {
       try {
-        const rawText = buffer.toString(encoding as BufferEncoding)
+        const rawText = buffer.toString(encoding)
         console.log(`${encoding} encoding - Length: ${rawText.length}`)
         
         // Look for text patterns
