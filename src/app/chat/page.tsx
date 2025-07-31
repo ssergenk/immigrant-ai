@@ -36,12 +36,44 @@ function ChatContent() {
   const [showFileUpload, setShowFileUpload] = useState(false)
   const [isClearingChat, setIsClearingChat] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileUploadRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const supabase = createSupabaseClient()
 
   // Language support
   const { currentLanguage, setLanguage } = useLanguage()
+
+  // Handle mobile keyboard visibility
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        const isKeyboard = window.visualViewport ? window.visualViewport.height < window.innerHeight * 0.75 : false
+        setIsKeyboardOpen(isKeyboard)
+      }
+    }
+
+    const handleVisualViewportChange = () => {
+      if (window.visualViewport) {
+        const isKeyboard = window.visualViewport.height < window.innerHeight * 0.75
+        setIsKeyboardOpen(isKeyboard)
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportChange)
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      if (typeof window !== 'undefined' && window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportChange)
+      }
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
 
   // Scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -366,7 +398,13 @@ function ChatContent() {
   const isPremium = userData?.subscription_status === 'premium'
 
   return (
-    <main className="min-h-screen bg-gray-900 text-white overflow-hidden">
+    <main 
+      className="bg-gray-900 text-white overflow-hidden"
+      style={{
+        height: isKeyboardOpen ? '100vh' : '100dvh',
+        minHeight: isKeyboardOpen ? '100vh' : '100dvh'
+      }}
+    >
       {/* Animated Background - Same as Homepage */}
       <div className="fixed inset-0 z-0">
         <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-purple-900/20 to-gray-900"></div>
@@ -374,9 +412,9 @@ function ChatContent() {
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
-      <div className="relative z-10 min-h-screen flex flex-col">
+      <div className="relative z-10 h-full flex flex-col">
         {/* Header - Same Style as Homepage */}
-        <header className="border-b border-gray-800/50 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50">
+        <header className="border-b border-gray-800/50 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-50 flex-shrink-0">
           <div className="container mx-auto px-4 py-4 flex justify-between items-center">
             <div className="flex items-center gap-4">
               <img 
@@ -514,13 +552,13 @@ function ChatContent() {
 
         {/* Error Banner */}
         {error && (
-          <div className="bg-red-600/90 backdrop-blur-sm text-white px-4 py-3 text-center border-b border-red-500/50">
+          <div className="bg-red-600/90 backdrop-blur-sm text-white px-4 py-3 text-center border-b border-red-500/50 flex-shrink-0">
             {error}
           </div>
         )}
 
         {/* Chat Container */}
-        <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full">
+        <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full min-h-0">
           {/* Messages Area */}
           <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
             {messages.length === 0 && (
@@ -586,7 +624,7 @@ function ChatContent() {
 
           {/* File Upload Section */}
           {showFileUpload && (
-            <div ref={fileUploadRef} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 md:p-6">
+            <div ref={fileUploadRef} className="border-t border-gray-800/50 bg-gray-900/50 backdrop-blur-sm p-4 md:p-6 flex-shrink-0">
               <FileUpload
                 onFileUpload={handleFileUpload}
                 isUploading={isUploading}
@@ -597,9 +635,10 @@ function ChatContent() {
           )}
 
           {/* Input Area */}
-          <div className="border-t border-gray-800/50 bg-gray-900/80 backdrop-blur-sm p-4 md:p-6">
+          <div className="border-t border-gray-800/50 bg-gray-900/80 backdrop-blur-sm p-4 md:p-6 flex-shrink-0">
             <div className="flex gap-2 md:gap-3 mb-3 md:mb-4">
               <textarea
+                ref={inputRef}
                 value={inputMessage}
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
@@ -607,11 +646,12 @@ function ChatContent() {
                 className="flex-1 bg-gray-800/80 backdrop-blur-sm text-white border border-gray-600/50 rounded-xl px-4 md:px-6 py-3 md:py-4 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-none disabled:opacity-50 text-sm md:text-base"
                 rows={1}
                 disabled={isTyping || isAtLimit}
+                style={{ maxHeight: '120px' }}
               />
               <button
                 onClick={isAtLimit ? () => setShowUpgradeModal(true) : sendMessage}
                 disabled={(!inputMessage.trim() || isTyping) && !isAtLimit}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white px-4 md:px-6 py-3 md:py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center gap-2"
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white px-4 md:px-6 py-3 md:py-4 rounded-xl transition-all duration-300 hover:scale-105 disabled:hover:scale-100 shadow-lg flex items-center gap-2 flex-shrink-0"
               >
                 <Send className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="hidden sm:inline">{isAtLimit ? 'Upgrade' : 'Send'}</span>
@@ -654,7 +694,8 @@ function ChatContent() {
                 )}
               </div>
 
-              <div className="text-xs text-gray-500 hidden sm:block">
+              {/* Desktop Only Instructions */}
+              <div className="hidden lg:block text-xs text-gray-500">
                 {isAtLimit ?
                   'Upgrade to premium for unlimited messaging' :
                   'Press Enter to send • Shift+Enter for new line'
