@@ -385,8 +385,8 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
           console.log('✅ Text-based PDF analysis completed')
           
         } else {
-          // PDF is encrypted/protected - give clear guidance with Sarah's style
-          console.log('📄 PDF appears encrypted/protected, providing guidance')
+          // PDF is encrypted/protected - ALWAYS use Sarah's AI personality
+          console.log('📄 PDF appears encrypted/protected, getting Sarah response...')
           
           const response = await openai.chat.completions.create({
             model: 'gpt-4',
@@ -397,21 +397,15 @@ Analyze this immigration form. Tell me exactly what's filled out, what's missing
               },
               {
                 role: 'user',
-                content: `The PDF "${file.name}" is encrypted/protected and I can't extract readable text from it. This is super common with USCIS forms. Give me your direct, no-nonsense advice on how to handle this situation.`
+                content: `I tried to analyze the PDF "${file.name}" but it's encrypted or protected - I can't extract readable text from it. This is super common with USCIS immigration forms. Give me your direct Saul Goodman-style advice on how to handle this situation. Be short and helpful.`
               }
             ],
-            max_tokens: 300,
+            max_tokens: 200,
             temperature: 0.3
           })
 
-          analysisResult = response.choices[0].message.content || `Hey! Your PDF "${file.name}" is encrypted (super common with USCIS forms).
-
-**Quick fix:**
-1. Take screenshots of each page as JPG/PNG 
-2. Upload the images - I can read them perfectly!
-
-**OR tell me:**
-What immigration form is this? I can guide you step by step.`
+          analysisResult = response.choices[0].message.content || "Hey! Your PDF is locked down. No worries - screenshot each page as JPG and upload those instead. Works every time. What form you working on?"
+          console.log('✅ Sarah encrypted PDF response completed')
         }
 
       } else {
